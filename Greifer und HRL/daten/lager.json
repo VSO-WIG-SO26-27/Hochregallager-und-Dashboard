@@ -1,12 +1,20 @@
 {
  "Storage": {
-  "A1": null,
-  "A2": {
-   "tag_uid": "",
+  "A1": {
+   "tag_uid": "134CBA6B055F43",
    "state": 0,
-   "type": 2
+   "type": 1
   },
-  "A3": null,
+  "A2": {
+   "tag_uid": "8F4732A431E748",
+   "state": 0,
+   "type": 1
+  },
+  "A3": {
+   "tag_uid": "980F882BB65449",
+   "state": 0,
+   "type": 3
+  },
   "B1": null,
   "B2": null,
   "B3": null,
