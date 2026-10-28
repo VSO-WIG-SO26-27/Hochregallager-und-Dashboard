@@ -18,6 +18,7 @@ Die Logik ist 1:1 aus dem Original-C++-Code übernommen ([fischertechnik/txt_tra
 Ein Rechner steuert alle TXT-Controller per WLAN über [ftrobopy](https://github.com/ftrobopy/ftrobopy). Auf den TXT läuft dabei kein eigenes Programm.
 
 ```
+cd "Alle Elemente"
 py start.py --sim                   # ohne Anlage (Simulation aller vier Stationen)
 py start.py                         # an der Anlage: alle vier Stationen
 py start.py --stationen hbw,vgr     # nur Hochregallager + Greifer
