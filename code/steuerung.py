@@ -4,7 +4,7 @@ Hochregallager – Bewegungsabläufe und Ablaufsteuerung (Zustandsautomat).
   TxtHighBayWarehouse.cpp     ->  Bewegungsabläufe (referenzfahrt, hole_aus_regal, ...)
   TxtHighBayWarehouseRun.cpp  ->  Zustandsautomat (_schritt)
 
-Ablauf "Einlagern" (wie im Original, dort vom Sauggreifer/VGR angestoßen):
+Ablauf "Einlagern" (im Original vom Sauggreifer/VGR angestoßen):
   1. behaelter_holen    -> leerer Behälter wird aus dem Regal aufs Band gestellt
   2. (Werkstück wird in den Behälter gelegt)
   3. einlagern(Farbe)   -> Behälter mit Werkstück zurück ins Regal, danach Referenzfahrt
@@ -15,38 +15,31 @@ Ablauf "Auslagern":
   3. behaelter_zurueck  -> leerer Behälter zurück ins Regal, danach Referenzfahrt
 """
 
-import collections
-import threading
-import time
-
 from . import konfiguration as cfg
-from .achsen import AchsenFehler, EndschalterAchse, Foerderband, ReferenzAchse
-from .daten import Kalibrierung, Lager, platz_name
-from .hardware import HardwareFehler
-
-# Statuscodes wie im Original (TxtLEDSCode_t) – werden per MQTT verschickt
-STATUS_CODES = {"READY": 1, "BUSY": 2, "ERROR": 4, "CALIB": 7}
+from .achsen import EndschalterAchse, Foerderband, ReferenzAchse
+from .daten import Kalibrierung, Lager, platz_koordinaten, platz_name
+from .station import STATUS_CODES, Station  # noqa: F401  (STATUS_CODES für Abwärtskompatibilität)
 
 # Quittungscodes (TxtHbwAckCode_t)
 ACK_EXIT, ACK_FETCHED, ACK_STORED, ACK_CALIB_NAV, ACK_CALIB_END = 0, 1, 2, 3, 4
 
 KALIB_POSITIONEN = ["CV", "A1", "B2", "C3"]   # TxtHbwCalibPos_t
 
-# Welche Befehle in welchem Zustand erlaubt sind (für Dashboard-Knöpfe)
-ERLAUBT = {
-    "IDLE": {"behaelter_holen", "auslagern", "kalibrieren", "lager_reset", "referenzfahrt",
-             "hand", "platz_setzen"},
-    "STORE_WP": {"einlagern"},
-    "FETCH_WP_WAIT": {"behaelter_zurueck"},
-    "FAULT": {"quittieren", "platz_setzen"},
-    "CALIB_HBW_MOVE": {"kalib_waehle", "kalib_jog", "kalib_speichern", "kalib_ende"},
-}
 
+class Hochregallager(Station):
+    kuerzel = "HBW"
+    # Welche Befehle in welchem Zustand im Dashboard erlaubt sind
+    ERLAUBT = {
+        "IDLE": {"behaelter_holen", "auslagern", "kalibrieren", "lager_reset", "referenzfahrt",
+                 "hand", "platz_setzen"},
+        "STORE_WP": {"einlagern"},
+        "FETCH_WP_WAIT": {"behaelter_zurueck"},
+        "FAULT": {"quittieren", "platz_setzen"},
+        "CALIB_HBW_MOVE": {"kalib_waehle", "kalib_jog", "kalib_speichern", "kalib_ende"},
+    }
 
-class Hochregallager:
     def __init__(self, hw):
-        self.hw = hw
-        self.nothalt = threading.Event()
+        super().__init__(hw)
         self.achse_x = ReferenzAchse("X", hw, cfg.MOTOR_X, cfg.REF_X, cfg.ENDE_X, self.nothalt)
         self.achse_y = ReferenzAchse("Y", hw, cfg.MOTOR_Y, cfg.REF_Y, cfg.ENDE_Y, self.nothalt)
         self.achse_z = EndschalterAchse("Z", hw, cfg.MOTOR_Z,
@@ -54,71 +47,16 @@ class Hochregallager:
         self.band = Foerderband(hw, cfg.MOTOR_BAND, self.nothalt)
         self.lager = Lager()
         self.kalib = Kalibrierung()
-
-        self.zustand = "INIT"
-        self._neuer_zustand = "INIT"
-        self.status = "READY"
-        self.aktiv = False
-        self.fehler = ""
         self.kalib_pos = "CV"
-
-        # Anforderungen (C++: reqVGR...-Flags); "werkstueck" = reqVGRwp
-        self._lock = threading.Lock()
-        self._anf = {}
-        self.werkstueck = None
-
-        # Beobachter (z. B. MQTT-Brücke)
-        self.bei_status = []     # f(code, aktiv)
-        self.bei_quittung = []   # f(code, werkstueck)
-
-        self.protokoll = collections.deque(maxlen=200)
-        self._laeuft = False
-        self._thread = None
-
-    # =======================================================================
-    # Hilfsfunktionen
-    # =======================================================================
-    def log(self, text):
-        zeile = time.strftime("%H:%M:%S ") + text
-        print(zeile, flush=True)
-        self.protokoll.append(zeile)
-
-    def _setze_status(self, aktiv, status):
-        """C++: setActStatus / setStatus -> Observer -> MQTT f/i/state/hbw"""
-        self.aktiv, self.status = aktiv, status
-        for f in list(self.bei_status):
-            try:
-                f(STATUS_CODES.get(status, 0), aktiv)
-            except Exception as e:
-                self.log(f"Status-Beobachter-Fehler: {e}")
-
-    def _quittung(self, code, wp):
-        for f in list(self.bei_quittung):
-            try:
-                f(code, wp)
-            except Exception as e:
-                self.log(f"Quittungs-Beobachter-Fehler: {e}")
-
-    @staticmethod
-    def _parallel(f1, f2):
-        """Zwei Bewegungen gleichzeitig (C++: zwei std::thread + join)."""
-        fehler = []
-
-        def lauf(f):
-            try:
-                f()
-            except Exception as e:
-                fehler.append(e)
-
-        t1 = threading.Thread(target=lauf, args=(f1,))
-        t2 = threading.Thread(target=lauf, args=(f2,))
-        t1.start(); t2.start(); t1.join(); t2.join()
-        if fehler:
-            raise fehler[0]
+        self.werkstueck = None        # C++: reqVGRwp
 
     def set_geschwindigkeit(self, v):
         for a in (self.achse_x, self.achse_y, self.achse_z, self.band):
             a.geschwindigkeit = v
+
+    def stop(self):
+        super().stop()
+        self._quittung(ACK_EXIT, None)
 
     # =======================================================================
     # Bewegungsabläufe (TxtHighBayWarehouse.cpp)
@@ -232,122 +170,53 @@ class Hochregallager:
             self.fahre_platz(idx, idx)
 
     # =======================================================================
-    # Anforderungen von außen (Dashboard oder MQTT)
+    # Anforderungen
     # =======================================================================
-    def anfordern(self, befehl, quelle="dashboard", **daten):
-        """Gibt (ok, meldung) zurück. Dashboard-Befehle werden gegen den aktuellen
-        Zustand geprüft; MQTT-Befehle werden wie im Original als Flag gemerkt."""
-        if befehl == "not_halt":
-            self.not_halt()
-            return True, "Not-Halt ausgelöst"
+    def _pruefe_dashboard(self, befehl, daten):
+        if befehl in ("einlagern", "auslagern"):
+            typ = daten.get("farbe")
+            if typ not in ("WHITE", "RED", "BLUE"):
+                return False, "Bitte Farbe wählen"
+            if befehl == "einlagern" and not self.lager.farbe_einlagerbar(typ):
+                return False, f"Es sind bereits 3 Werkstücke {typ} eingelagert"
+            if befehl == "auslagern" and not self.hat_farbe(typ):
+                return False, f"Kein Werkstück {typ} im Lager"
+            daten["werkstueck"] = {"id": daten.get("id", ""), "type": typ, "state": "RAW"}
+        if befehl == "behaelter_holen" and not self.hat_leeren_behaelter():
+            return False, "Kein leerer Behälter im Lager"
+        if befehl == "platz_setzen":
+            self.lager.platz_setzen(daten["platz"], daten.get("farbe"))
+            self.log(f"Lagerplatz {daten['platz']} manuell auf {daten.get('farbe') or 'leer'} gesetzt")
+            return None, "Lagerplatz geändert"
+        return True, ""
 
-        if quelle == "dashboard":
-            zustand = self.zustand
-            if befehl not in ERLAUBT.get(zustand, set()):
-                return False, f"'{befehl}' ist im Zustand {zustand} nicht möglich"
-            if befehl == "einlagern":
-                typ = daten.get("farbe")
-                if typ not in ("WHITE", "RED", "BLUE"):
-                    return False, "Bitte Farbe wählen"
-                if not self.lager.farbe_einlagerbar(typ):
-                    return False, f"Es sind bereits 3 Werkstücke {typ} eingelagert"
-                daten["werkstueck"] = {"id": daten.get("id", ""), "type": typ, "state": "RAW"}
-            if befehl == "auslagern":
-                typ = daten.get("farbe")
-                if typ not in ("WHITE", "RED", "BLUE"):
-                    return False, "Bitte Farbe wählen"
-                if not any(w and w["type"] == typ for w in self.lager.bestand().values()):
-                    return False, f"Kein Werkstück {typ} im Lager"
-                daten["werkstueck"] = {"id": "", "type": typ, "state": "RAW"}
-            if befehl == "behaelter_holen" and not any(w is None for w in self.lager.bestand().values()):
-                return False, "Kein leerer Behälter im Lager"
-            if befehl == "platz_setzen":
-                self.lager.platz_setzen(daten["platz"], daten.get("farbe"))
-                self.log(f"Lagerplatz {daten['platz']} manuell auf {daten.get('farbe') or 'leer'} gesetzt")
-                return True, "Lagerplatz geändert"
+    def _angefordert(self, befehl, daten):
+        if daten.get("werkstueck") is not None:
+            self.werkstueck = daten["werkstueck"]
 
-        with self._lock:
-            if "werkstueck" in daten and daten["werkstueck"] is not None:
-                self.werkstueck = daten["werkstueck"]
-            self._anf[befehl] = daten
-        return True, f"Befehl '{befehl}' angenommen"
+    def hat_farbe(self, typ):
+        return any(w and w["type"] == typ for w in self.lager.bestand().values())
 
-    def _hole(self, befehl):
-        with self._lock:
-            return self._anf.pop(befehl, None)
-
-    def not_halt(self):
-        self.nothalt.set()
-        self.hw.alles_aus()
-        self.log("NOT-HALT – alle Motoren aus")
+    def hat_leeren_behaelter(self):
+        return any(w is None for w in self.lager.bestand().values())
 
     # =======================================================================
     # Zustandsautomat (TxtHighBayWarehouseRun.cpp)
     # =======================================================================
-    def start(self):
-        self._laeuft = True
-        self._thread = threading.Thread(target=self._lauf, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        self._laeuft = False
-        self.not_halt()
-        if self._thread:
-            self._thread.join(timeout=3)
-        self._quittung(ACK_EXIT, None)
-
-    def _lauf(self):
-        self.log("Ablaufsteuerung gestartet")
-        while self._laeuft:
-            try:
-                if self.nothalt.is_set() and self.zustand != "FAULT":
-                    raise AchsenFehler("Not-Halt")
-                self._schritt()
-            except (AchsenFehler, HardwareFehler) as e:
-                self.hw.alles_aus()
-                self.fehler = str(e)
-                self.log(f"FEHLER: {e}")
-                self._neuer_zustand = "FAULT"
-                self._eintritt()
-            except Exception as e:  # unerwartet – trotzdem sicher anhalten
-                self.hw.alles_aus()
-                self.fehler = f"Programmfehler: {e!r}"
-                self.log(self.fehler)
-                self._neuer_zustand = "FAULT"
-                self._eintritt()
-            time.sleep(0.01)
-
-    def _wechsel(self, z):
-        self._neuer_zustand = z
-
-    def _eintritt(self):
-        """Eintrittsaktionen beim Zustandswechsel (erster switch in fsmStep)."""
-        if self._neuer_zustand == self.zustand:
-            return
-        alt, self.zustand = self.zustand, self._neuer_zustand
-        self.log(f"Zustand {alt} -> {self.zustand}")
-        if self.zustand == "FAULT":
-            with self._lock:
-                self._anf.clear()        # alte Aufträge verwerfen, nur "Quittieren" zählt
-            self._setze_status(False, "ERROR")
-        elif self.zustand == "IDLE":
+    def _bei_eintritt(self, zustand):
+        if zustand == "IDLE":
             self.set_geschwindigkeit(cfg.GESCHWINDIGKEIT)
             self.referenzfahrt()
             self._setze_status(False, "READY")
             self.lager._geaendert()          # C++: publishStorage()
-        elif self.zustand == "CALIB_HBW":
+        elif zustand == "CALIB_HBW":
             self.referenzfahrt()
 
     def _schritt(self):
-        self._eintritt()
         z = self.zustand
 
         if z == "FAULT":
-            if self._hole("quittieren") is not None:
-                self.nothalt.clear()
-                self.fehler = ""
-                self._setze_status(False, "READY")
-                self._wechsel("IDLE")
+            self._fault_schritt()
 
         elif z == "INIT":
             self.referenzfahrt()
@@ -373,7 +242,7 @@ class Hochregallager:
         elif z == "FETCH_CONTAINER":
             if self.behaelter_holen():
                 self._quittung(ACK_FETCHED, self.werkstueck)
-                self.log("Leerer Behälter steht am Band – Werkstück einlegen und 'Einlagern' wählen")
+                self.log("Leerer Behälter steht am Band – Werkstück einlegen und einlagern")
                 self._wechsel("STORE_WP")
             else:
                 self.fehler = "Kein leerer Behälter gefunden"
@@ -391,7 +260,7 @@ class Hochregallager:
         elif z == "FETCH_WP":
             if self.werkstueck and self.auslagern(self.werkstueck["type"]):
                 self._quittung(ACK_FETCHED, self.werkstueck)
-                self.log("Werkstück steht am Band – entnehmen und 'Behälter zurück' wählen")
+                self.log("Werkstück steht am Band – entnehmen und Behälter zurücklagern")
                 self._wechsel("FETCH_WP_WAIT")
             else:
                 self.fehler = "Kein passendes Werkstück im Lager"
@@ -424,8 +293,6 @@ class Hochregallager:
 
         elif z == "CALIB_HBW_MOVE":
             self._kalibrier_schritt()
-
-        self._eintritt()
 
     # --- Kalibrierung (ersetzt die Joystick-Bedienung durch Dashboard-Knöpfe)
     def _kalibrier_schritt(self):
@@ -493,7 +360,6 @@ class Hochregallager:
                 self.achse_z.einfahren()
                 (self.achse_x if aktion == "x" else self.achse_y).fahre_rel(int(h.get("schritte", 0)))
             elif aktion == "platz":
-                from .daten import platz_koordinaten
                 i, j = platz_koordinaten(h["platz"])
                 self.fahre_platz(i, j)
             elif aktion == "band_pos":
@@ -510,14 +376,8 @@ class Hochregallager:
         except Exception:
             eingaenge = {}
         np = self.lager.naechster_platz
-        return {
-            "modus": self.hw.modus,
-            "zustand": self.zustand,
-            "status": self.status,
-            "aktiv": self.aktiv,
-            "fehler": self.fehler,
-            "nothalt": self.nothalt.is_set(),
-            "erlaubt": sorted(ERLAUBT.get(self.zustand, set())),
+        b = self.basis_bericht()
+        b.update({
             "x": {"pos": self.achse_x.pos, "status": self.achse_x.status, "ende": cfg.ENDE_X},
             "y": {"pos": self.achse_y.pos, "status": self.achse_y.status, "ende": cfg.ENDE_Y},
             "z": {"eingefahren": eingaenge.get(f"I{cfg.TASTER_Z_EINGEFAHREN}", 0),
@@ -529,5 +389,5 @@ class Hochregallager:
             "werkstueck": self.werkstueck,
             "kalibrierung": self.kalib.als_dict(),
             "kalib_pos": self.kalib_pos,
-            "protokoll": list(self.protokoll)[-60:],
-        }
+        })
+        return b

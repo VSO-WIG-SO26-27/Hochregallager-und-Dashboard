@@ -1,9 +1,9 @@
 """
-Kleiner Webserver für das Test-Dashboard (nur Python-Standardbibliothek).
+Kleiner Webserver für das Dashboard (nur Python-Standardbibliothek).
 
   GET  /             -> dashboard.html
-  GET  /api/status   -> aktueller Zustand als JSON
-  POST /api/befehl   -> {"befehl": "...", ...} an die Ablaufsteuerung
+  GET  /api/status   -> Zustand aller Stationen als JSON
+  POST /api/befehl   -> {"station": "hbw"|"vgr"|"alle", "befehl": "...", ...}
 """
 
 import json
@@ -13,7 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HTML_DATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 
 
-def erstelle_server(hbw, port, mqtt=None):
+def erstelle_server(stationen, port, mqtt=None):
+    """stationen: dict, z. B. {"hbw": Hochregallager, "vgr": Sauggreifer}"""
+
     class Handler(BaseHTTPRequestHandler):
         def _antwort(self, code, daten, typ="application/json; charset=utf-8"):
             body = daten if isinstance(daten, bytes) else json.dumps(daten).encode("utf-8")
@@ -29,7 +31,7 @@ def erstelle_server(hbw, port, mqtt=None):
                 with open(HTML_DATEI, "rb") as f:
                     self._antwort(200, f.read(), "text/html; charset=utf-8")
             elif self.path == "/api/status":
-                bericht = hbw.zustandsbericht()
+                bericht = {name: s.zustandsbericht() for name, s in stationen.items()}
                 bericht["mqtt"] = None if mqtt is None else mqtt.verbunden
                 self._antwort(200, bericht)
             else:
@@ -43,10 +45,18 @@ def erstelle_server(hbw, port, mqtt=None):
                 laenge = int(self.headers.get("Content-Length", 0))
                 daten = json.loads(self.rfile.read(laenge) or b"{}")
                 befehl = daten.pop("befehl")
+                station = daten.pop("station", "hbw")
             except (ValueError, KeyError):
                 self._antwort(400, {"ok": False, "meldung": "Ungültige Anfrage"})
                 return
-            ok, meldung = hbw.anfordern(befehl, quelle="dashboard", **daten)
+            if station == "alle":
+                ergebnisse = [s.anfordern(befehl, quelle="dashboard", **dict(daten)) for s in stationen.values()]
+                ok = all(e[0] for e in ergebnisse)
+                meldung = " · ".join(e[1] for e in ergebnisse)
+            elif station in stationen:
+                ok, meldung = stationen[station].anfordern(befehl, quelle="dashboard", **daten)
+            else:
+                ok, meldung = False, f"Station '{station}' ist nicht aktiv"
             self._antwort(200, {"ok": ok, "meldung": meldung})
 
         def log_message(self, *args):   # keine Zeile pro Abfrage im Terminal

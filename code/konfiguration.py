@@ -17,6 +17,9 @@ Der C++-Code zählt ab 0 – dort ist z. B. "chM = 1" der Motor M2.
 TXT_IP = "192.168.0.12"
 TXT_PORT = 65000
 
+# Feste IP des Greifer-TXT (TXT3 VGR+DPS) – steuert auch die Ein-/Ausgabestation
+VGR_IP = "192.168.0.13"
+
 # Port des Test-Dashboards im Browser: http://127.0.0.1:8000
 WEB_PORT = 8000
 
@@ -75,6 +78,51 @@ STANDARD_KALIBRIERUNG = {
     "hby": [80, 445, 855],      # Y-Position Zeile A, B, C
     "conv": {"x": 20, "y": 720} # Übergabeposition am Förderband
 }
+
+# ===========================================================================
+# Vakuum-Sauggreifer (VGR) und Ein-/Ausgabestation (DPS)
+# Quelle: Konstruktor TxtVacuumGripperRobot.cpp, TxtDeliveryPickupStation.cpp,
+#         PinAssignmentTXT.md (TXT 5)
+# ===========================================================================
+# Drehachse      C++: axisX("VGR_X", pT, 0, 0, 1500) -> M1, Encoder C1, Referenz I1
+VGR_MOTOR_X, VGR_REF_X, VGR_ENDE_X = 1, 1, 1500
+# Hubachse       C++: axisY("VGR_Y", pT, 1, 1, 900)  -> M2, Encoder C2, Referenz I2
+VGR_MOTOR_Y, VGR_REF_Y, VGR_ENDE_Y = 2, 2, 900
+# Auslegerarm    C++: axisZ("VGR_Z", pT, 2, 2, 1100) -> M3, Encoder C3, Referenz I3
+VGR_MOTOR_Z, VGR_REF_Z, VGR_ENDE_Z = 3, 3, 1100
+# Sauggreifer    C++: vgripper(pT, 6, 7)             -> Kompressor O7, Ventil O8
+VGR_KOMPRESSOR, VGR_VENTIL = 7, 8
+VGR_ANSAUGZEIT_S = 2.0          # TxtVacuumGripper::grip(): 2000 ms Kompressor vorlaufen lassen
+
+# Ein-/Ausgabestation (DPS)
+DPS_LICHTSCHRANKE_EINGABE = 7   # I7: 0 = Werkstück liegt in der Eingabe (C++: !is_DIN())
+DPS_FARBSENSOR = 8              # I8: analog, Spannung in mV
+DPS_LICHTSCHRANKE_AUSGABE = 4   # C4 (Zählereingang als Taster): 1 = Ausgabe ist frei
+
+# Farbsensor-Schwellwerte (TxtDeliveryPickupStationCalibData::saveDefault)
+#   200 <= mV < th1 -> weiß,  th1 <= mV < th2 -> rot,  th2 <= mV < 2000 -> blau
+FARBE_TH1 = 850
+FARBE_TH2 = 1550
+
+# Standard-Positionen des Greifers (x = Drehung, y = Höhe, z = Arm)
+# TxtVacuumGripperRobotCalibData::saveDefault – "...0" ist jeweils der Anfahrpunkt
+VGR_STANDARD_POSITIONEN = {
+    "DIN0": (22, 600, 19),    "DIN": (22, 758, 19),      # Eingabe (Delivery In)
+    "WDC0": (300, 400, 0),    "WDC": (300, 600, 0),      # Ablage falsche Farbe
+    "DCS0": (123, 500, 65),   "DCS": (123, 645, 75),     # Farbsensor
+    "DNFC0": (200, 600, 250), "DNFC": (200, 643, 260),   # NFC-Leser
+    "DOUT0": (263, 50, 280),  "DOUT": (263, 320, 590),   # Ausgabe (Delivery Out)
+    "HBW0": (1410, 0, 0),     "HBW": (1410, 50, 186),    # Übergabe Hochregallager
+    "HBW1": (1410, 170, 186),
+    "MPO0": (931, 0, 880),    "MPO": (931, 490, 934),    # Bearbeitungsstation (später)
+    "SSD10": (469, 300, 280), "SSD1": (469, 845, 380),   # Sortierstrecke (später)
+    "SSD20": (390, 300, 280), "SSD2": (390, 845, 434),
+    "SSD30": (316, 300, 280), "SSD3": (316, 845, 588),
+}
+
+# Werkstück nur annehmen, wenn die Eingabe-Lichtschranke so lange belegt ist
+# (verhindert Fehlstarts durch kurzes Flackern)
+DPS_ENTPRELLZEIT_S = 0.5
 
 # ---------------------------------------------------------------------------
 # MQTT (optional) – nur nötig, wenn das Python-HBW mit der restlichen

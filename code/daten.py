@@ -223,3 +223,86 @@ class Kalibrierung:
 
     def als_dict(self):
         return {"hbx": list(self.hbx), "hby": list(self.hby), "conv": dict(self.conv)}
+
+
+# ===========================================================================
+# Sauggreifer (VGR) – TxtVacuumGripperRobotCalibData
+# ===========================================================================
+class KalibrierungGreifer:
+    """Benannte 3D-Positionen des Greifers (x = Drehung, y = Höhe, z = Arm).
+    Gespeichert im Format von Data/Calib.VGR.json des Original-TXT."""
+
+    def __init__(self, dateiname="kalibrierung_greifer.json"):
+        os.makedirs(DATEN_ORDNER, exist_ok=True)
+        self.datei = os.path.join(DATEN_ORDNER, dateiname)
+        self.pos = {k: list(v) for k, v in cfg.VGR_STANDARD_POSITIONEN.items()}
+        if not self.laden():
+            self.speichern()
+
+    def laden(self):
+        if not os.path.exists(self.datei):
+            return False
+        try:
+            with open(self.datei, encoding="utf-8") as f:
+                liste = json.load(f)["VGR"]["pos3list"]
+            for eintrag in liste:
+                for name, p in eintrag.items():
+                    self.pos[name] = [int(p["x"]), int(p["y"]), int(p["z"])]
+            return True
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"Greifer-Kalibrierdatei {self.datei} unlesbar ({e}) – Standardwerte werden benutzt")
+            return False
+
+    def speichern(self):
+        liste = [{name: {"x": p[0], "y": p[1], "z": p[2]}} for name, p in self.pos.items()]
+        with open(self.datei, "w", encoding="utf-8") as f:
+            json.dump({"VGR": {"pos3list": liste}}, f, indent=1)
+
+    def setze(self, name, xyz):
+        self.pos[name] = [int(v) for v in xyz]
+
+    def kopiere(self, quelle, ziel, achse):
+        """C++: copyPos3X / copyPos3Z"""
+        i = "xyz".index(achse)
+        self.pos[ziel][i] = self.pos[quelle][i]
+
+    def als_dict(self):
+        return {k: list(v) for k, v in self.pos.items()}
+
+
+class KalibrierungFarbsensor:
+    """Schwellwerte des Farbsensors (C++: TxtDeliveryPickupStationCalibData,
+    Datei Data/Calib.DPS.json)."""
+
+    def __init__(self, dateiname="kalibrierung_farbsensor.json"):
+        os.makedirs(DATEN_ORDNER, exist_ok=True)
+        self.datei = os.path.join(DATEN_ORDNER, dateiname)
+        self.th1, self.th2 = cfg.FARBE_TH1, cfg.FARBE_TH2
+        if not self.laden():
+            self.speichern()
+
+    def laden(self):
+        if not os.path.exists(self.datei):
+            return False
+        try:
+            with open(self.datei, encoding="utf-8") as f:
+                c = json.load(f)["VGR"]["colorsens"]
+            self.th1, self.th2 = int(c["th1"]), int(c["th2"])
+            return True
+        except (OSError, ValueError, KeyError) as e:
+            print(f"Farbsensor-Datei {self.datei} unlesbar ({e}) – Standardwerte werden benutzt")
+            return False
+
+    def speichern(self):
+        with open(self.datei, "w", encoding="utf-8") as f:
+            json.dump({"VGR": {"colorsens": {"th1": self.th1, "th2": self.th2}}}, f, indent=1)
+
+    def farbe(self, mv):
+        """C++: TxtDeliveryPickupStation::getLastColor"""
+        if 200 <= mv < self.th1:
+            return "WHITE"
+        if self.th1 <= mv < self.th2:
+            return "RED"
+        if self.th2 <= mv < 2000:
+            return "BLUE"
+        return "NONE"
