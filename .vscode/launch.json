@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Greifer und HRL – Simulation",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Greifer und HRL/start.py",
+      "args": ["--sim"],
+      "cwd": "${workspaceFolder}/Greifer und HRL"
+    },
+    {
+      "name": "Greifer und HRL – an der Anlage",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Greifer und HRL/start.py",
+      "cwd": "${workspaceFolder}/Greifer und HRL"
+    },
+    {
+      "name": "Alle Elemente – Simulation",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Alle Elemente/start.py",
+      "args": ["--sim"],
+      "cwd": "${workspaceFolder}/Alle Elemente"
+    },
+    {
+      "name": "Alle Elemente – an der Anlage",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Alle Elemente/start.py",
+      "cwd": "${workspaceFolder}/Alle Elemente"
+    }
+  ]
+}

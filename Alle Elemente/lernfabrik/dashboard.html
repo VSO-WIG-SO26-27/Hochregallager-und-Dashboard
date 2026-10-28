@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lernfabrik Dashboard</title>
+<style>
+  :root {
+    --bg: #f3f4f1; --panel: #ffffff; --ink: #1d2320; --muted: #69716c; --line: #dfe2dc;
+    --accent: #1f6f5c; --accent-ink: #ffffff; --warn: #b7791f; --err: #c0392b;
+    --white: #f4f4f0; --red: #d64541; --blue: #2f6fd6; --rack: #c9cdc5; --belt: #8a8f88;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141816; --panel: #1c211f; --ink: #e7ebe8; --muted: #9aa39e; --line: #2d3430;
+      --accent: #3fae8f; --accent-ink: #0d1411; --rack: #3a423e; --belt: #59615c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+           padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 17px; margin: 0 8px 0 0; font-weight: 650; }
+  .stpill { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+          border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.READY { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .pill.BUSY { background: var(--warn); color: #fff; border-color: transparent; }
+  .pill.ERROR { background: var(--err); color: #fff; border-color: transparent; }
+  .pill.CALIB { background: #7b4fc9; color: #fff; border-color: transparent; }
+  .spacer { flex: 1; }
+  #nothalt { background: var(--err); color: #fff; border: 0; border-radius: 8px;
+             padding: 10px 18px; font-weight: 700; letter-spacing: .03em; cursor: pointer; }
+  nav { display: flex; gap: 4px; padding: 10px 20px 0; max-width: 1400px; margin: 0 auto; }
+  nav button { border-radius: 8px 8px 0 0; border-bottom: 0; background: transparent; color: var(--muted); }
+  nav button.aktiv { background: var(--panel); color: var(--ink); font-weight: 600; }
+  .tab { display: none; }
+  .tab.aktiv { display: grid; }
+  .raster { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px;
+            padding: 12px 20px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { .raster { grid-template-columns: 1fr; padding: 12px 16px; } nav { padding: 10px 16px 0; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+               margin: 0 0 10px; font-weight: 650; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .hinweis { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent);
+             margin-bottom: 12px; }
+  .hinweis.fehler { background: color-mix(in srgb, var(--err) 15%, transparent); }
+  svg { width: 100%; height: auto; display: block; }
+  .ablauf { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .ablauf { grid-template-columns: 1fr; } }
+  .ablauf > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .ablauf h3, section h3 { margin: 0 0 8px; font-size: 14px; }
+  .schritt { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .nr { width: 20px; height: 20px; border-radius: 50%; background: var(--line); font-size: 11px;
+        display: inline-grid; place-items: center; font-weight: 700; flex: none; }
+  button { font: inherit; padding: 7px 12px; border-radius: 7px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--ink); cursor: pointer; }
+  button.haupt { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  select { font: inherit; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--ink); }
+  .reihe { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .reihe .lbl { width: 72px; color: var(--muted); font-size: 12px; }
+  .werte { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .werte.vier { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 560px) { .werte.vier { grid-template-columns: repeat(2, 1fr); } }
+  .wert { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .wert b { display: block; font: 600 19px/1.25 var(--mono); }
+  .wert span { font-size: 12px; color: var(--muted); }
+  .eingaenge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .ein { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 6px;
+         border: 1px solid var(--line); border-radius: 6px; }
+  .led { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  .led.an { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+  .ein small { color: var(--muted); display: block; font-size: 10px; line-height: 1.1; }
+  .protokoll { font: 12px/1.5 var(--mono); max-height: 260px; overflow: auto; white-space: pre-wrap;
+               background: var(--bg); border-radius: 6px; padding: 8px; margin: 0; }
+  #meldung { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink);
+             color: var(--bg); padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s;
+             pointer-events: none; max-width: calc(100% - 32px); z-index: 5; }
+  #meldung.zeigen { opacity: 1; }
+  [hidden] { display: none !important; }
+  .klein { font-size: 12px; color: var(--muted); }
+  .farbpunkt { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--ink);
+               vertical-align: -1px; margin-right: 4px; }
+  .sim { border-style: dashed; }
+  .breit { grid-column: 1 / -1; }
+  label.schalter { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+  table.pos { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  table.pos td, table.pos th { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+  table.pos td:first-child, table.pos th:first-child { text-align: left; }
+  #platzdialog { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
+                 align-items: center; justify-content: center; padding: 16px; z-index: 4; }
+  #platzdialog.offen { display: flex; }
+  #platzdialog > div { background: var(--panel); border-radius: 10px; padding: 16px; min-width: 260px; }
+  .fluss { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  @media (max-width: 900px) { .fluss { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .karte { border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; position: relative; cursor: pointer; }
+  .karte.FAULT { border-color: var(--err); background: color-mix(in srgb, var(--err) 8%, transparent); }
+  .karte.arbeitet { border-color: var(--warn); }
+  .karte h3 { margin: 0 0 6px; font-size: 14px; display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+  .karte .zst { font: 12px var(--mono); color: var(--muted); }
+  .karte p { margin: 6px 0 0; font-size: 12px; min-height: 2.9em; }
+  .karte .wps { margin-top: 6px; min-height: 16px; font-size: 12px; color: var(--muted); }
+  .karte.aus { opacity: .45; cursor: default; }
+  .zahl { font: 600 13px var(--mono); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lernfabrik</h1>
+  <span class="stpill">Hochregallager <span class="pill" id="hbw_status">–</span><span class="pill" id="hbw_zustand">–</span></span>
+  <span class="stpill" id="vgr_kopf">Greifer <span class="pill" id="vgr_status">–</span><span class="pill" id="vgr_zustand">–</span></span>
+  <span class="stpill" id="mpo_kopf" hidden>Ofen <span class="pill" id="mpo_status">–</span><span class="pill" id="mpo_zustand">–</span></span>
+  <span class="stpill" id="sld_kopf" hidden>Sortierung <span class="pill" id="sld_status">–</span><span class="pill" id="sld_zustand">–</span></span>
+  <span class="pill" id="modus">–</span>
+  <span class="pill" id="mqtt" hidden>MQTT</span>
+  <span class="spacer"></span>
+  <button id="nothalt" onclick="befehl('alle','not_halt')">NOT-HALT</button>
+</header>
+
+<nav>
+  <button class="aktiv" data-tab="uebersicht">Übersicht</button>
+  <button data-tab="hbw">Hochregallager</button>
+  <button data-tab="vgr" id="tab_vgr_knopf">Greifer</button>
+  <button data-tab="mpo" id="tab_mpo_knopf" hidden>Ofen &amp; Säge</button>
+  <button data-tab="sld" id="tab_sld_knopf" hidden>Sortierung</button>
+</nav>
+
+<!-- ===================== ÜBERSICHT ===================== -->
+<main class="tab raster aktiv" id="tab_uebersicht">
+  <section class="breit">
+    <h2>Fabrik im Überblick</h2>
+    <div class="fluss" id="fluss"></div>
+    <div class="reihe" id="bestellweg_reihe" style="margin-top:10px" hidden>
+      <span class="klein">Bestellweg:</span>
+      <label class="schalter"><input type="radio" name="bestellweg" value="bearbeitung" onchange="befehl('vgr','bestellweg',{weg:this.value})"> über Ofen &amp; Sortierung (wie Original)</label>
+      <label class="schalter"><input type="radio" name="bestellweg" value="direkt" onchange="befehl('vgr','bestellweg',{weg:this.value})"> direkt zur Ausgabe</label>
+    </div>
+  </section>
+  <div class="col">
+    <section>
+      <h2>Regal &amp; Position Hochregallager</h2>
+      <div class="hinweis" id="hbw_hinweis">Verbinde …</div>
+      <svg id="regal" aria-label="Seitenansicht Regal"></svg>
+      <p class="klein">Klick auf einen Lagerplatz (Hochregallager im Zustand IDLE oder FAULT), um die Belegung zu korrigieren.</p>
+    </section>
+  </div>
+  <div class="col">
+    <section id="vgr_uebersicht">
+      <h2>Greifer &amp; Ein-/Ausgabe</h2>
+      <div class="hinweis" id="vgr_hinweis">–</div>
+      <div class="werte vier">
+        <div class="wert"><span>Eingabe</span><b id="ue_eingabe">–</b></div>
+        <div class="wert"><span>Ausgabe</span><b id="ue_ausgabe">–</b></div>
+        <div class="wert"><span>Farbsensor</span><b id="ue_farbe">–</b><span id="ue_mv"></span></div>
+        <div class="wert"><span>Bestellung</span><b id="ue_best">–</b><span id="ue_beststate"></span></div>
+      </div>
+      <h3>Werkstück bestellen (Hochregallager → … → Ausgabe)</h3>
+      <div class="reihe">
+        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'WHITE'})"><span class="farbpunkt" style="background:var(--white)"></span>Weiß</button>
+        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'RED'})"><span class="farbpunkt" style="background:var(--red)"></span>Rot</button>
+        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'BLUE'})"><span class="farbpunkt" style="background:var(--blue)"></span>Blau</button>
+      </div>
+      <h3 style="margin-top:14px">Einlagern (Eingabe → Hochregallager)</h3>
+      <div class="reihe">
+        <label class="schalter"><input type="checkbox" id="auto_annahme" onchange="befehl('vgr','auto_annahme',{an:this.checked})"> Werkstück in der Eingabe automatisch annehmen</label>
+      </div>
+      <div class="reihe">
+        <button data-st="vgr" data-cmd="annehmen" onclick="befehl('vgr','annehmen')">Jetzt annehmen</button>
+      </div>
+      <div class="reihe">
+        <button data-st="vgr" data-cmd="bestellung_abbrechen" onclick="if(confirm('Laufende Bestellung abbrechen? (Nur nötig, wenn ein Werkstück unterwegs verloren ging.)'))befehl('vgr','bestellung_abbrechen')">Bestellung abbrechen</button>
+      </div>
+      <div class="reihe" style="margin-top:14px">
+        <button onclick="quittiereAlle()">Alle Fehler quittieren</button>
+      </div>
+    </section>
+    <section class="sim" id="simbox" hidden>
+      <h2>Simulation</h2>
+      <div class="reihe"><span class="lbl">Eingabe</span>
+        <button onclick="befehl('vgr','sim_einlegen',{farbe:'WHITE'})">Weiß einlegen</button>
+        <button onclick="befehl('vgr','sim_einlegen',{farbe:'RED'})">Rot einlegen</button>
+        <button onclick="befehl('vgr','sim_einlegen',{farbe:'BLUE'})">Blau einlegen</button>
+        <button onclick="befehl('vgr','sim_einlegen',{farbe:'NONE'})">Unbekannt</button></div>
+      <div class="reihe"><span class="lbl">Ausgabe</span>
+        <button onclick="befehl('vgr','sim_ausgabe',{belegt:true})">belegen</button>
+        <button onclick="befehl('vgr','sim_ausgabe',{belegt:false})">Werkstück entnehmen</button></div>
+      <div class="reihe" id="sim_mpo" hidden><span class="lbl">Ofen</span>
+        <button onclick="befehl('mpo','sim_ofen_einlegen',{farbe:'RED'})">Werkstück auf Ofenschieber</button></div>
+      <div class="reihe" id="sim_sld" hidden><span class="lbl">Sortierung</span>
+        <button onclick="befehl('sld','sim_band_einlegen',{farbe:'WHITE'})">Weiß aufs Band</button>
+        <button onclick="befehl('sld','sim_band_einlegen',{farbe:'RED'})">Rot</button>
+        <button onclick="befehl('sld','sim_band_einlegen',{farbe:'BLUE'})">Blau</button>
+        <button onclick="befehl('sld','sim_ablagen_leeren')">leeren</button></div>
+    </section>
+  </div>
+  <section class="breit">
+    <h2>Protokoll</h2>
+    <pre class="protokoll" id="protokoll_alle"></pre>
+  </section>
+</main>
+
+<!-- ===================== HOCHREGALLAGER ===================== -->
+<main class="tab raster" id="tab_hbw">
+  <div class="col">
+    <section>
+      <h2>Ablauf Hochregallager (Handsteuerung)</h2>
+      <p class="klein" style="margin-top:0">Für den Einzeltest ohne Greifer. Läuft der Greifer, steuert er das Hochregallager selbst.</p>
+      <div class="ablauf">
+        <div>
+          <h3>Einlagern</h3>
+          <div class="schritt"><span class="nr">1</span>
+            <button class="haupt" data-st="hbw" data-cmd="behaelter_holen" onclick="befehl('hbw','behaelter_holen')">Leeren Behälter holen</button></div>
+          <div class="schritt"><span class="nr">2</span>
+            <select id="farbe_ein"><option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select>
+            <button class="haupt" data-st="hbw" data-cmd="einlagern" onclick="befehl('hbw','einlagern',{farbe:val('farbe_ein')})">Einlagern</button></div>
+        </div>
+        <div>
+          <h3>Auslagern</h3>
+          <div class="schritt"><span class="nr">1</span>
+            <select id="farbe_aus"><option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select>
+            <button class="haupt" data-st="hbw" data-cmd="auslagern" onclick="befehl('hbw','auslagern',{farbe:val('farbe_aus')})">Auslagern</button></div>
+          <div class="schritt"><span class="nr">2</span>
+            <button class="haupt" data-st="hbw" data-cmd="behaelter_zurueck" onclick="befehl('hbw','behaelter_zurueck')">Leeren Behälter zurück</button></div>
+        </div>
+      </div>
+      <div class="schritt" style="margin-top:14px">
+        <button data-st="hbw" data-cmd="referenzfahrt" onclick="befehl('hbw','referenzfahrt')">Referenzfahrt</button>
+        <button data-st="hbw" data-cmd="kalibrieren" onclick="befehl('hbw','kalibrieren')">Kalibrieren</button>
+        <button data-st="hbw" data-cmd="lager_reset" onclick="if(confirm('Lager zurücksetzen? Alle Plätze gelten dann als leere Behälter.'))befehl('hbw','lager_reset')">Lager zurücksetzen</button>
+        <button data-st="hbw" data-cmd="quittieren" onclick="befehl('hbw','quittieren')">Fehler quittieren</button>
+      </div>
+    </section>
+
+    <section id="hbw_kalib" hidden>
+      <h2>Kalibrierung Hochregallager</h2>
+      <div class="reihe"><span class="lbl">Position</span>
+        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'CV'})">Band (CV)</button>
+        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'A1'})">A1</button>
+        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'B2'})">B2</button>
+        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'C3'})">C3</button>
+        <span class="klein">aktiv: <b id="hbw_kpos">–</b></span>
+      </div>
+      <div class="reihe"><span class="lbl">X (horiz.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="x"></span></div>
+      <div class="reihe"><span class="lbl">Y (vert.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="y"></span></div>
+      <div class="reihe">
+        <button class="haupt" data-st="hbw" data-cmd="kalib_speichern" onclick="befehl('hbw','kalib_speichern')">Position speichern</button>
+        <button data-st="hbw" data-cmd="kalib_ende" onclick="befehl('hbw','kalib_ende')">Kalibrierung beenden</button>
+      </div>
+      <p class="klein" id="hbw_kwerte"></p>
+    </section>
+  </div>
+
+  <div class="col">
+    <section>
+      <h2>Achsen</h2>
+      <div class="werte">
+        <div class="wert"><span>X horizontal</span><b id="hbw_xpos">–</b><span id="hbw_xst"></span></div>
+        <div class="wert"><span>Y vertikal</span><b id="hbw_ypos">–</b><span id="hbw_yst"></span></div>
+        <div class="wert"><span>Ausleger Z</span><b id="hbw_zpos">–</b><span id="hbw_zst"></span></div>
+      </div>
+      <h2>Eingänge</h2>
+      <div class="eingaenge" id="hbw_eingaenge"></div>
+    </section>
+    <section>
+      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
+      <div class="reihe"><span class="lbl">X</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="x"></span></div>
+      <div class="reihe"><span class="lbl">Y</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="y"></span></div>
+      <div class="reihe"><span class="lbl">Ausleger</span>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_ein')">Einfahren</button>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_aus')">Ausfahren</button></div>
+      <div class="reihe"><span class="lbl">Band</span>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_rein')">Rein (1,0 s)</button>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_raus')">Raus (1,2 s)</button></div>
+      <div class="reihe"><span class="lbl">Anfahren</span>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_pos')">Band</button>
+        <select id="hplatz"></select>
+        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','platz',{platz:val('hplatz')})">Platz</button></div>
+    </section>
+    <section>
+      <h2>Protokoll Hochregallager</h2>
+      <pre class="protokoll" id="protokoll_hbw"></pre>
+    </section>
+  </div>
+</main>
+
+<!-- ===================== GREIFER ===================== -->
+<main class="tab raster" id="tab_vgr">
+  <div class="col">
+    <section>
+      <h2>Achsen &amp; Sauger</h2>
+      <div class="werte vier">
+        <div class="wert"><span>Drehung (X)</span><b id="vgr_xpos">–</b><span id="vgr_xst"></span></div>
+        <div class="wert"><span>Höhe (Y)</span><b id="vgr_ypos">–</b><span id="vgr_yst"></span></div>
+        <div class="wert"><span>Arm (Z)</span><b id="vgr_zpos">–</b><span id="vgr_zst"></span></div>
+        <div class="wert"><span>Sauger</span><b id="vgr_sauger">–</b></div>
+      </div>
+      <h2>Eingänge</h2>
+      <div class="eingaenge" id="vgr_eingaenge"></div>
+    </section>
+
+    <section>
+      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
+      <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="x"></span></div>
+      <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="y"></span></div>
+      <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="z"></span></div>
+      <div class="reihe"><span class="lbl">Anfahren</span>
+        <select id="vgr_punkt"></select>
+        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','punkt',{punkt:val('vgr_punkt')})">Punkt anfahren</button></div>
+      <div class="reihe"><span class="lbl">Sauger</span>
+        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','greifen')">Ansaugen</button>
+        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','loslassen')">Loslassen</button></div>
+      <div class="reihe" style="margin-top:12px">
+        <button data-st="vgr" data-cmd="referenzfahrt" onclick="befehl('vgr','referenzfahrt')">Referenzfahrt</button>
+        <button data-st="vgr" data-cmd="kalibrieren" onclick="befehl('vgr','kalibrieren')">Positionen kalibrieren</button>
+        <button data-st="vgr" data-cmd="farbkalibrieren" onclick="befehl('vgr','farbkalibrieren')">Farbsensor kalibrieren</button>
+        <button data-st="vgr" data-cmd="quittieren" onclick="befehl('vgr','quittieren')">Fehler quittieren</button>
+      </div>
+    </section>
+
+    <section id="vgr_kalib" hidden>
+      <h2>Kalibrierung Greifer-Positionen</h2>
+      <div class="hinweis" id="vgr_khinweis"></div>
+      <div class="reihe" id="vgr_kpunkte"></div>
+      <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="x"></span></div>
+      <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="y"></span></div>
+      <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="z"></span></div>
+      <div class="reihe">
+        <button class="haupt" data-st="vgr" data-cmd="kalib_speichern" onclick="befehl('vgr','kalib_speichern')">Position speichern</button>
+        <button data-st="vgr" data-cmd="kalib_ende" onclick="befehl('vgr','kalib_ende')">Kalibrierung beenden</button>
+      </div>
+      <p class="klein">Wie im Original werden beim Speichern die Anfahrpunkte („…0“) in Drehung bzw. Arm mit angepasst.</p>
+    </section>
+
+    <section id="vgr_farbkalib" hidden>
+      <h2>Kalibrierung Farbsensor</h2>
+      <p class="klein" style="margin-top:0">Nacheinander ein weißes, rotes und blaues Werkstück unter den Farbsensor legen und jeweils „messen“ drücken.</p>
+      <div class="werte">
+        <div class="wert"><span>Weiß</span><b id="fk_WHITE">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'WHITE'})">messen</button></div>
+        <div class="wert"><span>Rot</span><b id="fk_RED">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'RED'})">messen</button></div>
+        <div class="wert"><span>Blau</span><b id="fk_BLUE">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'BLUE'})">messen</button></div>
+      </div>
+      <div class="reihe">
+        <button class="haupt" data-st="vgr" data-cmd="farbkalib_speichern" onclick="befehl('vgr','farbkalib_speichern')">Schwellwerte berechnen &amp; speichern</button>
+        <button data-st="vgr" data-cmd="farbkalib_ende" onclick="befehl('vgr','farbkalib_ende')">Abbrechen</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section>
+      <h2>Farbsensor</h2>
+      <div class="werte">
+        <div class="wert"><span>Messwert live</span><b id="vgr_mv">–</b></div>
+        <div class="wert"><span>erkannte Farbe</span><b id="vgr_flive">–</b></div>
+        <div class="wert"><span>Schwellen</span><b id="vgr_th" style="font-size:14px">–</b></div>
+      </div>
+      <p class="klein">Weiß: 200 mV bis Schwelle 1 · Rot: bis Schwelle 2 · Blau: bis 2000 mV</p>
+    </section>
+    <section>
+      <h2>Gespeicherte Positionen</h2>
+      <table class="pos"><thead><tr><th>Punkt</th><th>Drehung</th><th>Höhe</th><th>Arm</th></tr></thead><tbody id="vgr_postab"></tbody></table>
+    </section>
+    <section>
+      <h2>Protokoll Greifer</h2>
+      <pre class="protokoll" id="protokoll_vgr"></pre>
+    </section>
+  </div>
+</main>
+
+<!-- ===================== BEARBEITUNGSSTATION (MPO) ===================== -->
+<main class="tab raster" id="tab_mpo">
+  <div class="col">
+    <section>
+      <h2>Bearbeitungsstation mit Ofen</h2>
+      <div class="hinweis" id="mpo_hinweis">–</div>
+      <p class="klein" style="margin-top:0">Ablauf: Ofen („brennen“) → interner Sauger setzt auf den Drehtisch → Säge →
+        Auswerfer aufs Band → weiter zur Sortierstrecke. Normalerweise startet der Greifer die Bearbeitung,
+        wenn er ein bestelltes Werkstück auf den Ofenschieber legt.</p>
+      <div class="werte vier">
+        <div class="wert"><span>Drehtisch</span><b id="mpo_tisch">–</b></div>
+        <div class="wert"><span>Sauger</span><b id="mpo_sauger">–</b></div>
+        <div class="wert"><span>Ofenschieber</span><b id="mpo_schieber">–</b></div>
+        <div class="wert"><span>Bearbeitet</span><b id="mpo_zyklen">–</b></div>
+      </div>
+      <div class="reihe">
+        <button class="haupt" data-st="mpo" data-cmd="produzieren" onclick="befehl('mpo','produzieren')">Bearbeitung starten</button>
+        <button data-st="mpo" data-cmd="grundstellung" onclick="befehl('mpo','grundstellung')">Grundstellung</button>
+        <button data-st="mpo" data-cmd="quittieren" onclick="befehl('mpo','quittieren')">Fehler quittieren</button>
+      </div>
+      <p class="klein">„Bearbeitung starten“ geht nur, wenn ein Werkstück auf dem Ofenschieber liegt (Lichtschranke am Ofen).</p>
+    </section>
+    <section>
+      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
+      <div class="reihe"><span class="lbl">Drehtisch</span>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','tisch',{ziel:0})">Sauger</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','tisch',{ziel:1})">Säge</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','tisch',{ziel:2})">Band</button></div>
+      <div class="reihe"><span class="lbl">Sauger</span>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','sauger_ofen')">zum Ofen</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','sauger_tisch')">zum Drehtisch</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','ansaugen')">ansaugen</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','loslassen')">loslassen</button></div>
+      <div class="reihe"><span class="lbl">Ofen</span>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','schieber_rein')">Schieber rein</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','schieber_raus')">Schieber raus</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','tuer_auf')">Tür auf</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','tuer_zu')">Tür zu</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','licht')">Licht</button></div>
+      <div class="reihe"><span class="lbl">Sonstiges</span>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','saege')">Säge (2 s)</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','band')">Band (3 s)</button>
+        <button data-st="mpo" data-cmd="hand" onclick="hand('mpo','auswerfen')">Auswerfer</button></div>
+      <p class="klein">Vorsicht an der echten Anlage: Die Tür vor „Schieber rein“ öffnen, sonst fährt der Schieber gegen die Tür.</p>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Eingänge Master (TXT 192.168.0.11)</h2>
+      <div class="eingaenge" id="mpo_eingaenge"></div>
+      <h2 style="margin-top:12px">Eingänge Erweiterung</h2>
+      <div class="eingaenge" id="mpo_erw"></div>
+      <h2 style="margin-top:12px">Ausgänge</h2>
+      <div class="eingaenge" id="mpo_ausgaenge"></div>
+    </section>
+    <section>
+      <h2>Protokoll Bearbeitungsstation</h2>
+      <pre class="protokoll" id="protokoll_mpo"></pre>
+    </section>
+  </div>
+</main>
+
+<!-- ===================== SORTIERSTRECKE (SLD) ===================== -->
+<main class="tab raster" id="tab_sld">
+  <div class="col">
+    <section>
+      <h2>Sortierstrecke mit Farberkennung</h2>
+      <div class="hinweis" id="sld_hinweis">–</div>
+      <p class="klein" style="margin-top:0">Ein Werkstück am Bandanfang startet das Band. Der Farbsensor misst während der
+        Vorbeifahrt, der kleinste Messwert entscheidet die Farbe. Nach einer festen Zahl von Bandimpulsen
+        schiebt das passende Ventil das Werkstück in seine Ablage.</p>
+      <div class="werte vier">
+        <div class="wert"><span>Farbsensor live</span><b id="sld_mv">–</b></div>
+        <div class="wert"><span>letzte Farbe</span><b id="sld_farbe">–</b><span id="sld_messwert"></span></div>
+        <div class="wert"><span>Bandimpulse</span><b id="sld_flanken">–</b><span class="klein">(Flanken)</span></div>
+        <div class="wert"><span>Sortiert</span><b id="sld_sortiert" style="font-size:14px">–</b></div>
+      </div>
+      <h3>Ablagen</h3>
+      <div class="werte" id="sld_ablagen"></div>
+      <div class="reihe">
+        <button data-st="sld" data-cmd="farbkalibrieren" onclick="befehl('sld','farbkalibrieren')">Farbsensor kalibrieren</button>
+        <button data-st="sld" data-cmd="quittieren" onclick="befehl('sld','quittieren')">Fehler quittieren</button>
+      </div>
+    </section>
+    <section id="sld_kalib" hidden>
+      <h2>Kalibrierung Farbsensor Sortierstrecke</h2>
+      <p class="klein" style="margin-top:0">Das Band läuft. Nacheinander ein weißes, ein rotes und ein blaues Werkstück an den
+        Bandanfang legen. Jeder Messwert wird an der Auswurf-Lichtschranke übernommen; nach dem dritten werden die
+        Schwellwerte berechnet und gespeichert. Die Werkstücke am Bandende wieder herausnehmen.</p>
+      <div class="werte">
+        <div class="wert"><span>Weiß</span><b id="sk_WHITE">–</b></div>
+        <div class="wert"><span>Rot</span><b id="sk_RED">–</b></div>
+        <div class="wert"><span>Blau</span><b id="sk_BLUE">–</b></div>
+      </div>
+      <div class="reihe"><span class="klein">als Nächstes: <b id="sld_kfarbe">–</b></span>
+        <button data-st="sld" data-cmd="farbkalib_ende" onclick="befehl('sld','farbkalib_ende')">Abbrechen</button></div>
+    </section>
+    <section>
+      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
+      <div class="reihe"><span class="lbl">Band</span>
+        <button data-st="sld" data-cmd="hand" onclick="hand('sld','band')">laufen (3 s)</button></div>
+      <div class="reihe"><span class="lbl">Auswerfer</span>
+        <button data-st="sld" data-cmd="hand" onclick="hand('sld','auswerfen',{farbe:'WHITE'})">Weiß</button>
+        <button data-st="sld" data-cmd="hand" onclick="hand('sld','auswerfen',{farbe:'RED'})">Rot</button>
+        <button data-st="sld" data-cmd="hand" onclick="hand('sld','auswerfen',{farbe:'BLUE'})">Blau</button></div>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Eingänge (TXT 192.168.0.14)</h2>
+      <div class="eingaenge" id="sld_eingaenge"></div>
+      <p class="klein" id="sld_kwerte"></p>
+    </section>
+    <section>
+      <h2>Protokoll Sortierstrecke</h2>
+      <pre class="protokoll" id="protokoll_sld"></pre>
+    </section>
+  </div>
+</main>
+
+<div id="platzdialog"><div>
+  <h3 style="margin-top:0">Lagerplatz <span id="pdname"></span></h3>
+  <div class="reihe">
+    <select id="pdfarbe"><option value="LEER">leerer Behälter</option><option value="WHITE">Weiß</option>
+      <option value="RED">Rot</option><option value="BLUE">Blau</option></select>
+  </div>
+  <div class="reihe">
+    <button class="haupt" onclick="platzSpeichern()">Übernehmen</button>
+    <button onclick="platzDialog(false)">Abbrechen</button>
+  </div>
+</div></div>
+<div id="meldung"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const val = id => $(id).value;
+const FARBE = { WHITE: 'var(--white)', RED: 'var(--red)', BLUE: 'var(--blue)', NONE: '#999' };
+const FARBNAME = { WHITE: 'weiß', RED: 'rot', BLUE: 'blau', NONE: '–' };
+const BESTELLUNG = { WAITING_FOR_ORDER: 'keine', ORDERED: 'bestellt', IN_PROCESS: 'unterwegs', SHIPPED: 'ausgeliefert' };
+const NAMEN_HBW = { 1: 'Lichtschr. außen', 4: 'Lichtschr. innen', 5: 'Ref. X', 6: 'Ausleger ein', 7: 'Ausleger aus', 8: 'Ref. Y' };
+const NAMEN_VGR = { 1: 'Ref. Drehung', 2: 'Ref. Höhe', 3: 'Ref. Arm', 7: 'Lichtschr. Eingabe', 8: 'Farbsensor (analog)' };
+const NAMEN_MPO = { 1: 'Tisch: Sauger', 2: 'Tisch: Säge', 3: 'Tisch: Band', 4: 'Lichtschr. Bandende', 5: 'Sauger am Tisch' };
+const NAMEN_MPO_ERW = { 1: 'Schieber im Ofen', 2: 'Schieber außen', 3: 'Sauger am Ofen', 5: 'Lichtschr. Ofen' };
+const NAMEN_SLD = { 1: 'Lichtschr. Start', 2: 'Farbsensor (analog)', 3: 'Lichtschr. Auswurf', 6: 'Ablage weiß', 7: 'Ablage rot', 8: 'Ablage blau' };
+const AUSG_MPO = { kompressor: 'Kompressor', tuer_offen: 'Ofentür offen', licht: 'Ofenlicht', vakuum: 'Vakuum',
+                   senken: 'Sauger gesenkt', auswerfer: 'Auswerfer', saege: 'Säge' };
+const STATION_NAME = { vgr: 'Greifer & Ein-/Ausgabe', hbw: 'Hochregallager', mpo: 'Ofen & Säge', sld: 'Sortierstrecke' };
+const HINWEISE_HBW = {
+  INIT: 'Referenzfahrt läuft …',
+  IDLE: 'Bereit.',
+  FETCH_CONTAINER: 'Leerer Behälter wird geholt …',
+  STORE_WP: 'Behälter steht am Band – wartet auf das Werkstück.',
+  FETCH_WP: 'Werkstück wird ausgelagert …',
+  FETCH_WP_WAIT: 'Werkstück steht am Band – wartet auf Entnahme.',
+  STORE_CONTAINER: 'Leerer Behälter wird zurückgelagert …',
+  CALIB_HBW: 'Kalibrierung startet …', CALIB_HBW_NAV: 'Kalibrierposition wird angefahren …',
+  CALIB_HBW_MOVE: 'Kalibrierung: Position justieren und speichern (Reiter „Hochregallager“).',
+  FAULT: 'Fehler – Ursache beheben, dann quittieren (danach Referenzfahrt).'
+};
+const HINWEISE_VGR = {
+  INIT: 'Referenzfahrt läuft …',
+  IDLE: 'Bereit – Werkstück in die Eingabe legen oder eine Farbe bestellen.',
+  CALIB_VGR_MOVE: 'Kalibrierung der Positionen (Reiter „Greifer“).',
+  CALIB_DPS_NEXT: 'Kalibrierung des Farbsensors (Reiter „Greifer“).',
+  FAULT: 'Fehler – Ursache beheben, dann quittieren (danach Referenzfahrt).'
+};
+let S = null;
+
+// ---------- Befehle ----------
+function meldung(t) { const m = $('meldung'); m.textContent = t; m.classList.add('zeigen');
+  clearTimeout(m._t); m._t = setTimeout(() => m.classList.remove('zeigen'), 2800); }
+async function befehl(station, b, daten = {}) {
+  try {
+    const r = await fetch('/api/befehl', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ station, befehl: b, ...daten }) });
+    const j = await r.json(); meldung(j.meldung); aktualisieren();
+  } catch (e) { meldung('Keine Verbindung zum Python-Programm'); }
+}
+const hand = (st, aktion, d = {}) => befehl(st, 'hand', { aktion, ...d });
+
+// ---------- Aufbau ----------
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('aktiv', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('aktiv', t.id === 'tab_' + b.dataset.tab));
+  try { localStorage.setItem('tab', b.dataset.tab); } catch (e) {}
+});
+try { const t = localStorage.getItem('tab'); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch (e) {}
+
+document.querySelectorAll('.jog').forEach(el => {
+  el.innerHTML = [-200, -50, -10, 10, 50, 200].map(s =>
+    `<button data-st="${el.dataset.st}" data-cmd="${el.dataset.cmd}" data-jog="${el.dataset.achse}" data-s="${s}">${s > 0 ? '+' : '−'}${Math.abs(s)}</button>`).join(' ');
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-jog]'); if (!b) return;
+  const st = b.dataset.st, achse = b.dataset.jog, s = +b.dataset.s;
+  if (b.dataset.cmd === 'kalib_jog') befehl(st, 'kalib_jog', { achse, schritte: s });
+  else hand(st, achse, { schritte: s });
+});
+$('hplatz').innerHTML = ['A1','A2','A3','B1','B2','B3','C1','C2','C3'].map(p => `<option>${p}</option>`).join('');
+function eingaengeAufbauen(id, namen, extra = '') {
+  $(id).innerHTML = [1,2,3,4,5,6,7,8].map(n =>
+    `<div class="ein"><span class="led" id="${id}${n}"></span><div>I${n}<small>${namen[n] || '–'}</small></div></div>`).join('') + extra;
+}
+eingaengeAufbauen('hbw_eingaenge', NAMEN_HBW);
+eingaengeAufbauen('vgr_eingaenge', NAMEN_VGR,
+  `<div class="ein"><span class="led" id="vgr_c4"></span><div>C4<small>Lichtschr. Ausgabe</small></div></div>`);
+eingaengeAufbauen('mpo_eingaenge', NAMEN_MPO);
+$('mpo_erw').innerHTML = [1,2,3,4,5,6,7,8].map(n =>
+  `<div class="ein"><span class="led" id="mpo_erw${n}"></span><div>I${n}<small>${NAMEN_MPO_ERW[n] || '–'}</small></div></div>`).join('');
+$('mpo_ausgaenge').innerHTML = Object.entries(AUSG_MPO).map(([k, n]) =>
+  `<div class="ein"><span class="led" id="mpo_a_${k}"></span><div>${n}</div></div>`).join('');
+eingaengeAufbauen('sld_eingaenge', NAMEN_SLD);
+function quittiereAlle() {
+  if (!S) return;
+  const fehler = ['hbw', 'vgr', 'mpo', 'sld'].filter(k => S[k] && S[k].zustand === 'FAULT');
+  if (!fehler.length) { meldung('Keine Station ist im Fehlerzustand'); return; }
+  fehler.forEach(k => befehl(k, 'quittieren'));
+}
+
+function platzDialog(offen, name) {
+  $('platzdialog').classList.toggle('offen', offen);
+  if (offen) { $('pdname').textContent = name; const w = S.hbw.lager[name]; $('pdfarbe').value = w ? w.type : 'LEER'; }
+}
+function platzSpeichern() { befehl('hbw', 'platz_setzen', { platz: $('pdname').textContent, farbe: val('pdfarbe') }); platzDialog(false); }
+
+// ---------- Regal-Zeichnung ----------
+function regalZeichnen(s) {
+  const k = s.kalibrierung, svg = $('regal'), W = 480, H = 300;
+  const x0 = Math.min(k.conv.x - 180, k.hbx[0] - W / 2, 0) - 40;
+  const x1 = Math.max(k.hbx[2] + W / 2, s.x.ende) + 40;
+  const y0 = Math.min(k.hby[0] - H / 2 + 40, 0) - 60;
+  const y1 = Math.max(k.hby[2] + H / 2 + 80, k.conv.y + 290, s.y.ende) + 20;
+  svg.setAttribute('viewBox', `${x0} ${y0} ${x1 - x0} ${y1 - y0}`);
+  let h = '';
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+    const name = 'ABC'[j] + (i + 1), cx = k.hbx[i], cy = k.hby[j], wp = s.lager[name];
+    const markiert = s.naechster_platz === name;
+    h += `<g style="cursor:pointer" onclick="if(S.hbw.erlaubt.includes('platz_setzen'))platzDialog(true,'${name}');else meldung('Nur im Zustand IDLE oder FAULT änderbar')">
+      <rect x="${cx - W/2}" y="${cy - H/2 + 60}" width="${W}" height="${H}" rx="14" fill="none"
+        stroke="${markiert ? 'var(--warn)' : 'var(--rack)'}" stroke-width="${markiert ? 14 : 8}"/>
+      <rect x="${cx - 150}" y="${cy + 20}" width="300" height="150" rx="10" fill="var(--rack)" opacity=".55"/>
+      ${wp ? `<circle cx="${cx}" cy="${cy + 70}" r="62" fill="${FARBE[wp.type]}" stroke="var(--ink)" stroke-width="5"/>` : ''}
+      <text x="${cx - W/2 + 20}" y="${cy - H/2 + 120}" font-size="64" font-weight="700" fill="var(--muted)">${name}</text></g>`;
+  }
+  const c = k.conv;
+  h += `<rect x="${c.x - 140}" y="${c.y + 170}" width="300" height="34" rx="17" fill="var(--belt)"/>
+        <text x="${c.x - 140}" y="${c.y + 270}" font-size="56" fill="var(--muted)">Band</text>`;
+  const x = s.x.pos, y = s.y.pos, aus = s.z.ausgefahren;
+  h += `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="var(--accent)" stroke-width="6" stroke-dasharray="20 16" opacity=".7"/>
+        <line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="var(--accent)" stroke-width="6" stroke-dasharray="20 16" opacity=".7"/>
+        <rect x="${x - 90}" y="${y - 40}" width="180" height="80" rx="12" fill="var(--accent)"/>
+        <text x="${x}" y="${y + 18}" font-size="50" text-anchor="middle" fill="var(--accent-ink)" font-weight="700">${aus ? 'AUS' : 'EIN'}</text>`;
+  svg.innerHTML = h;
+}
+
+// ---------- Anzeige ----------
+function pill(id, s) { $(id + '_status').textContent = s.status; $(id + '_status').className = 'pill ' + s.status;
+  $(id + '_zustand').textContent = s.zustand; }
+function hinweis(id, s, texte, extra) {
+  const el = $(id);
+  el.textContent = (s.fehler ? 'Fehler: ' + s.fehler + ' — ' : '') + (extra || texte[s.zustand] || s.zustand) + (s.aktiv ? ' (fährt …)' : '');
+  el.className = 'hinweis' + (s.zustand === 'FAULT' ? ' fehler' : '');
+}
+function protokoll(id, zeilen) {
+  const p = $(id), unten = p.scrollTop + p.clientHeight >= p.scrollHeight - 8;
+  p.textContent = zeilen.join('\n'); if (unten) p.scrollTop = p.scrollHeight;
+}
+
+function render(d) {
+  S = d;
+  const h = d.hbw, v = d.vgr;
+  pill('hbw', h);
+  $('modus').textContent = h.modus;
+  if (d.mqtt !== null) { $('mqtt').hidden = false; $('mqtt').textContent = d.mqtt ? 'MQTT verbunden' : 'MQTT getrennt'; }
+  hinweis('hbw_hinweis', h, HINWEISE_HBW, h.gesperrt && h.zustand === 'IDLE' ? h.gesperrt : '');
+
+  // Knöpfe freigeben/sperren
+  document.querySelectorAll('button[data-cmd]').forEach(b => {
+    const st = d[b.dataset.st];
+    b.disabled = !st || !st.erlaubt.includes(b.dataset.cmd) || st.aktiv || (!!st.gesperrt && b.dataset.cmd !== 'quittieren');
+    if (st && b.dataset.st === 'vgr') {
+      const offen = st.bestellung.state !== 'WAITING_FOR_ORDER';
+      if (b.dataset.cmd === 'bestellen' && offen) b.disabled = true;
+      if (b.dataset.cmd === 'bestellung_abbrechen' && !offen) b.disabled = true;
+    }
+  });
+
+  // Hochregallager
+  $('hbw_xpos').textContent = h.x.pos; $('hbw_xst').textContent = h.x.status;
+  $('hbw_ypos').textContent = h.y.pos; $('hbw_yst').textContent = h.y.status;
+  $('hbw_zpos').textContent = h.z.ausgefahren ? 'aus' : (h.z.eingefahren ? 'ein' : 'mitte');
+  $('hbw_zst').textContent = h.z.status;
+  for (let n = 1; n <= 8; n++) $('hbw_eingaenge' + n).classList.toggle('an', h.eingaenge['I' + n] === 1);
+  $('hbw_kalib').hidden = !h.zustand.startsWith('CALIB');
+  $('hbw_kpos').textContent = h.kalib_pos;
+  const k = h.kalibrierung;
+  $('hbw_kwerte').textContent = `Gespeichert: Spalten x = ${k.hbx.join(' / ')} · Zeilen y = ${k.hby.join(' / ')} · Band x=${k.conv.x} y=${k.conv.y}`;
+  regalZeichnen(h);
+  protokoll('protokoll_hbw', h.protokoll);
+
+  // Greifer
+  const mitVgr = !!v;
+  $('vgr_kopf').hidden = !mitVgr; $('tab_vgr_knopf').hidden = !mitVgr; $('vgr_uebersicht').hidden = !mitVgr;
+  let alle = h.protokoll;
+  if (mitVgr) {
+    pill('vgr', v);
+    hinweis('vgr_hinweis', v, HINWEISE_VGR, v.hinweis);
+    $('ue_eingabe').textContent = v.eingabe_belegt ? 'belegt' : 'frei';
+    $('ue_ausgabe').textContent = v.ausgabe_frei === null ? '–' : (v.ausgabe_frei ? 'frei' : 'belegt');
+    $('ue_farbe').innerHTML = `<span class="farbpunkt" style="background:${FARBE[v.farbe_live]}"></span>${FARBNAME[v.farbe_live]}`;
+    $('ue_mv').textContent = v.farbwert === null ? '' : v.farbwert + ' mV';
+    $('ue_best').textContent = v.bestellung.type === 'NONE' ? '–' : FARBNAME[v.bestellung.type];
+    $('ue_beststate').textContent = BESTELLUNG[v.bestellung.state] || v.bestellung.state;
+    if (document.activeElement !== $('auto_annahme')) $('auto_annahme').checked = v.auto_annahme;
+    $('simbox').hidden = !v.sim;
+
+    $('vgr_xpos').textContent = v.x.pos; $('vgr_xst').textContent = v.x.status;
+    $('vgr_ypos').textContent = v.y.pos; $('vgr_yst').textContent = v.y.status;
+    $('vgr_zpos').textContent = v.z.pos; $('vgr_zst').textContent = v.z.status;
+    $('vgr_sauger').textContent = v.gegriffen ? 'an' : 'aus';
+    for (let n = 1; n <= 8; n++) $('vgr_eingaenge' + n).classList.toggle('an', v.eingaenge['I' + n] === 1);
+    $('vgr_c4').classList.toggle('an', v.ausgabe_frei === true);
+    $('vgr_mv').textContent = v.farbwert === null ? '–' : v.farbwert + ' mV';
+    $('vgr_flive').innerHTML = `<span class="farbpunkt" style="background:${FARBE[v.farbe_live]}"></span>${FARBNAME[v.farbe_live]}`;
+    $('vgr_th').textContent = `${v.farbschwellen.th1} / ${v.farbschwellen.th2} mV`;
+
+    const sel = $('vgr_punkt');
+    if (sel.options.length !== Object.keys(v.positionen).length)
+      sel.innerHTML = Object.keys(v.positionen).map(p => `<option>${p}</option>`).join('');
+    $('vgr_postab').innerHTML = Object.entries(v.positionen).map(([n, p]) =>
+      `<tr><td>${n}</td><td>${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td></tr>`).join('');
+
+    $('vgr_kalib').hidden = !v.zustand.startsWith('CALIB_VGR');
+    if ($('vgr_kpunkte').childElementCount === 0)
+      $('vgr_kpunkte').innerHTML = Object.entries(v.kalib_punkte).map(([k2, n]) =>
+        `<button data-st="vgr" data-cmd="kalib_waehle" onclick="befehl('vgr','kalib_waehle',{punkt:'${k2}'})">${n}</button>`).join('');
+    $('vgr_khinweis').textContent = v.kalib_punkt ? `Aktiver Punkt: ${v.kalib_punkte[v.kalib_punkt]}` : 'Bitte einen Punkt wählen – der Greifer fährt ihn an.';
+    $('vgr_farbkalib').hidden = !v.zustand.startsWith('CALIB_DPS');
+    for (const f of ['WHITE', 'RED', 'BLUE']) $('fk_' + f).textContent = v.farb_messungen[f] ? v.farb_messungen[f] + ' mV' : '–';
+    protokoll('protokoll_vgr', v.protokoll);
+    alle = alle.concat(v.protokoll);
+  }
+  renderMpo(d.mpo);
+  renderSld(d.sld);
+  renderFluss(d);
+  for (const k of ['mpo', 'sld']) if (d[k]) alle = alle.concat(d[k].protokoll);
+  if (d.sim_welt) alle = alle.concat(d.sim_welt.protokoll);
+  alle.sort((a, b) => a.slice(0, 8).localeCompare(b.slice(0, 8)));
+  protokoll('protokoll_alle', alle.slice(-80));
+}
+
+function punkt(f) { return `<span class="farbpunkt" style="background:${FARBE[f] || '#999'}"></span>`; }
+function wpListe(eintraege) {
+  return eintraege.filter(([f]) => f).map(([f, wo]) => `${punkt(f)}${wo}`).join(' &nbsp; ');
+}
+
+function renderFluss(d) {
+  const w = d.sim_welt;
+  const reihenfolge = ['vgr', 'hbw', 'mpo', 'sld'];
+  const info = {
+    vgr: v => w ? wpListe([[w.eingabe, 'Eingabe'], [w.greifer, 'am Sauger'], [w.ausgabe, 'Ausgabe']])
+                    + (w.falsch.length ? ` &nbsp; ${w.falsch.length}× falsch abgelegt` : '')
+                : `Bestellung: ${BESTELLUNG[v.bestellung.state] || v.bestellung.state}`,
+    hbw: h => (w && w.hbw_band ? wpListe([[w.hbw_band, 'am Band']]) + ' &nbsp; ' : '')
+              + `<span class="zahl">${Object.values(h.lager).filter(x => x).length}</span> von 9 Plätzen belegt`,
+    mpo: m => w ? wpListe([[w.mpo_ofen, 'Ofen'], [w.mpo_sauger, 'Sauger'], [w.mpo_tisch, 'Drehtisch'],
+                           [w.mpo_band && w.mpo_band.farbe, 'Band']])
+                : `${m.zyklen} bearbeitet`,
+    sld: s => (w ? wpListe(w.sld_band.map(x => [x.farbe, 'Band']).concat(
+                    Object.entries(w.sld_ablage).flatMap(([f, l]) => l.map(x => [x, 'Ablage']))))
+                 : `sortiert: ${s.sortiert.WHITE}/${s.sortiert.RED}/${s.sortiert.BLUE}`),
+  };
+  const hinweise = { hbw: HINWEISE_HBW, vgr: HINWEISE_VGR };
+  $('fluss').innerHTML = reihenfolge.map(k => {
+    const st = d[k];
+    if (!st) return `<div class="karte aus"><h3>${STATION_NAME[k]}</h3><div class="zst">nicht gestartet</div></div>`;
+    const text = st.fehler ? 'Fehler: ' + st.fehler : (st.hinweis || (hinweise[k] || {})[st.zustand] || '');
+    const klasse = st.zustand === 'FAULT' ? 'FAULT' : (st.aktiv || st.status === 'BUSY' ? 'arbeitet' : '');
+    return `<div class="karte ${klasse}" onclick="document.querySelector('nav button[data-tab=${k}]').click()">
+      <h3>${STATION_NAME[k]} <span class="pill ${st.status}">${st.status}</span></h3>
+      <div class="zst">${st.zustand}</div><p>${text}</p><div class="wps">${info[k](st)}</div></div>`;
+  }).join('');
+  const v = d.vgr;
+  $('bestellweg_reihe').hidden = !(v && v.bearbeitung_verfuegbar);
+  if (v && v.bearbeitung_verfuegbar)
+    document.querySelectorAll('input[name=bestellweg]').forEach(r => { r.checked = r.value === v.bestellweg; });
+}
+
+function renderMpo(m) {
+  $('mpo_kopf').hidden = !m; $('tab_mpo_knopf').hidden = !m; $('sim_mpo').hidden = !(m && m.sim);
+  if (!m) return;
+  pill('mpo', m);
+  hinweis('mpo_hinweis', m, {}, m.hinweis);
+  $('mpo_tisch').textContent = m.tisch || 'unterwegs';
+  $('mpo_sauger').textContent = m.sauger;
+  $('mpo_schieber').textContent = m.schieber;
+  $('mpo_zyklen').textContent = m.zyklen;
+  for (let n = 1; n <= 8; n++) {
+    $('mpo_eingaenge' + n).classList.toggle('an', m.eingaenge['I' + n] === 1);
+    $('mpo_erw' + n).classList.toggle('an', m.eingaenge['E' + n] === 1);
+  }
+  for (const k of Object.keys(AUSG_MPO)) $('mpo_a_' + k).classList.toggle('an', !!m.ausgaenge[k]);
+  protokoll('protokoll_mpo', m.protokoll);
+}
+
+function renderSld(s) {
+  $('sld_kopf').hidden = !s; $('tab_sld_knopf').hidden = !s; $('sim_sld').hidden = !(s && s.sim);
+  if (!s) return;
+  pill('sld', s);
+  hinweis('sld_hinweis', s, {}, s.hinweis);
+  $('sld_mv').innerHTML = s.farbwert === null ? '–' : `${punkt(s.farbe_live)}${s.farbwert}`;
+  $('sld_farbe').innerHTML = s.messwert === null ? '–' : `${punkt(s.farbe)}${FARBNAME[s.farbe]}`;
+  $('sld_messwert').textContent = s.messwert === null ? '' : s.messwert + ' mV';
+  $('sld_flanken').textContent = s.flanken === null ? '–' : s.flanken;
+  $('sld_sortiert').innerHTML = ['WHITE', 'RED', 'BLUE'].map(f => `${punkt(f)}${s.sortiert[f]}`).join(' ');
+  $('sld_ablagen').innerHTML = ['WHITE', 'RED', 'BLUE'].map(f =>
+    `<div class="wert"><span>${punkt(f)}Ablage ${FARBNAME[f]}</span><b>${s.ablagen[f] ? 'belegt' : 'leer'}</b></div>`).join('');
+  for (let n = 1; n <= 8; n++) $('sld_eingaenge' + n).classList.toggle('an', s.eingaenge['I' + n] === 1);
+  const k = s.kalibrierung;
+  $('sld_kwerte').textContent = `Schwellen: weiß < ${k.th1} mV ≤ rot < ${k.th2} mV ≤ blau · Auswurf nach ` +
+    `${k.zaehler.WHITE} / ${k.zaehler.RED} / ${k.zaehler.BLUE} Flanken`;
+  $('sld_kalib').hidden = !s.zustand.startsWith('CALIB_SLD');
+  for (const f of ['WHITE', 'RED', 'BLUE']) $('sk_' + f).textContent = s.kalib_werte[f] ? s.kalib_werte[f] + ' mV' : '–';
+  $('sld_kfarbe').textContent = s.kalib_farbe ? FARBNAME[s.kalib_farbe] : '–';
+  protokoll('protokoll_sld', s.protokoll);
+}
+
+async function aktualisieren() {
+  try { const r = await fetch('/api/status'); render(await r.json()); }
+  catch (e) { $('hbw_hinweis').textContent = 'Keine Verbindung zum Python-Programm – läuft start.py noch?'; $('hbw_hinweis').className = 'hinweis fehler'; }
+}
+aktualisieren(); setInterval(aktualisieren, 300);
+</script>
+</body>
+</html>
