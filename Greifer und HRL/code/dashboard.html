@@ -3,479 +3,1004 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lernfabrik Dashboard</title>
+<title>Lagerleitstand HRL</title>
 <style>
-  :root {
-    --bg: #f3f4f1; --panel: #ffffff; --ink: #1d2320; --muted: #69716c; --line: #dfe2dc;
-    --accent: #1f6f5c; --accent-ink: #ffffff; --warn: #b7791f; --err: #c0392b;
-    --white: #f4f4f0; --red: #d64541; --blue: #2f6fd6; --rack: #c9cdc5; --belt: #8a8f88;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+/* =====================================================================
+   Leitstand im Stil einer Industrie-HMI (ISA-101 "High Performance HMI"):
+   ruhige Grautöne, Farbe nur für Bedeutung (Zustand, Alarm, Werkstückfarbe).
+   Läuft ohne Internet – keine externen Schriften oder Bibliotheken.
+   ===================================================================== */
+:root {
+  color-scheme: light;
+  --bg: #e6e9ec; --panel: #f8f9fa; --panel-kopf: #eef0f3; --feld: #ffffff;
+  --line: #cdd3d9; --line2: #dde1e6;
+  --ink: #1a1f25; --ink2: #47505b; --muted: #6c7580;
+  --accent: #1c5da6; --accent-ink: #ffffff; --accent-soft: #dce8f6;
+  --ok: #1e7f3a; --ok-soft: #dff1e4; --warn: #b86e00; --warn-soft: #fbedd5;
+  --err: #c0262d; --err-soft: #fadcdc; --calib: #6a4bc4;
+  --kopf: #1c232c; --kopf-ink: #e9edf1; --kopf-muted: #9aa5b1; --kopf-line: #2d3743;
+  --wp-white: #f3f3ef; --wp-white-rand: #7d848c; --wp-red: #d13c37; --wp-blue: #2c6dd5;
+  --behaelter: #9aa2ab; --behaelter-fill: #d7dce1; --regal: #8d969f; --regal-fill: #eef1f4;
+  --zoneA: #e3edf9; --zoneB: #edf2f8; --zoneC: #f5f7fa;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --seq1: #cde2fb; --seq2: #86b6ef; --seq3: #3987e5; --seq4: #1c5cab; --seq5: #0d366b;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #12161b; --panel: #1a1f26; --panel-kopf: #20262e; --feld: #151a20;
+    --line: #2f3843; --line2: #262e37;
+    --ink: #e5e9ee; --ink2: #b5bdc7; --muted: #8b95a1;
+    --accent: #4b8fdd; --accent-ink: #0b1420; --accent-soft: #1d3047;
+    --ok: #3fae5f; --ok-soft: #173322; --warn: #e09a2b; --warn-soft: #3a2a10;
+    --err: #ec5b5f; --err-soft: #3d1b1d; --calib: #9a82ea;
+    --kopf: #0d1116; --kopf-line: #232b35;
+    --wp-white: #e9e9e4; --wp-white-rand: #9aa1a9; --wp-red: #e0524d; --wp-blue: #4a86e6;
+    --behaelter: #6c7682; --behaelter-fill: #343c46; --regal: #66707b; --regal-fill: #1e242b;
+    --zoneA: #1d2a3a; --zoneB: #1c232d; --zoneC: #1b2027;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --seq1: #184f95; --seq2: #1c5cab; --seq3: #3987e5; --seq4: #86b6ef; --seq5: #cde2fb;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #141816; --panel: #1c211f; --ink: #e7ebe8; --muted: #9aa39e; --line: #2d3430;
-      --accent: #3fae8f; --accent-ink: #0d1411; --rack: #3a423e; --belt: #59615c;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-           padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  h1 { font-size: 17px; margin: 0 8px 0 0; font-weight: 650; }
-  .stpill { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
-  .pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-          border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-  .pill.READY { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-  .pill.BUSY { background: var(--warn); color: #fff; border-color: transparent; }
-  .pill.ERROR { background: var(--err); color: #fff; border-color: transparent; }
-  .pill.CALIB { background: #7b4fc9; color: #fff; border-color: transparent; }
-  .spacer { flex: 1; }
-  #nothalt { background: var(--err); color: #fff; border: 0; border-radius: 8px;
-             padding: 10px 18px; font-weight: 700; letter-spacing: .03em; cursor: pointer; }
-  nav { display: flex; gap: 4px; padding: 10px 20px 0; max-width: 1400px; margin: 0 auto; }
-  nav button { border-radius: 8px 8px 0 0; border-bottom: 0; background: transparent; color: var(--muted); }
-  nav button.aktiv { background: var(--panel); color: var(--ink); font-weight: 600; }
-  .tab { display: none; }
-  .tab.aktiv { display: grid; }
-  .raster { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px;
-            padding: 12px 20px 24px; max-width: 1400px; margin: 0 auto; }
-  @media (max-width: 900px) { .raster { grid-template-columns: 1fr; padding: 12px 16px; } nav { padding: 10px 16px 0; } }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
-               margin: 0 0 10px; font-weight: 650; }
-  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .hinweis { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent);
-             margin-bottom: 12px; }
-  .hinweis.fehler { background: color-mix(in srgb, var(--err) 15%, transparent); }
-  svg { width: 100%; height: auto; display: block; }
-  .ablauf { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 560px) { .ablauf { grid-template-columns: 1fr; } }
-  .ablauf > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-  .ablauf h3, section h3 { margin: 0 0 8px; font-size: 14px; }
-  .schritt { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-  .nr { width: 20px; height: 20px; border-radius: 50%; background: var(--line); font-size: 11px;
-        display: inline-grid; place-items: center; font-weight: 700; flex: none; }
-  button { font: inherit; padding: 7px 12px; border-radius: 7px; border: 1px solid var(--line);
-           background: var(--bg); color: var(--ink); cursor: pointer; }
-  button.haupt { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
-  button:disabled { opacity: .38; cursor: not-allowed; }
-  select { font: inherit; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line);
-           background: var(--bg); color: var(--ink); }
-  .reihe { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
-  .reihe .lbl { width: 72px; color: var(--muted); font-size: 12px; }
-  .werte { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-  .werte.vier { grid-template-columns: repeat(4, 1fr); }
-  @media (max-width: 560px) { .werte.vier { grid-template-columns: repeat(2, 1fr); } }
-  .wert { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
-  .wert b { display: block; font: 600 19px/1.25 var(--mono); }
-  .wert span { font-size: 12px; color: var(--muted); }
-  .eingaenge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .ein { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 6px;
-         border: 1px solid var(--line); border-radius: 6px; }
-  .led { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
-  .led.an { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
-  .ein small { color: var(--muted); display: block; font-size: 10px; line-height: 1.1; }
-  .protokoll { font: 12px/1.5 var(--mono); max-height: 260px; overflow: auto; white-space: pre-wrap;
-               background: var(--bg); border-radius: 6px; padding: 8px; margin: 0; }
-  #meldung { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink);
-             color: var(--bg); padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s;
-             pointer-events: none; max-width: calc(100% - 32px); z-index: 5; }
-  #meldung.zeigen { opacity: 1; }
-  [hidden] { display: none !important; }
-  .klein { font-size: 12px; color: var(--muted); }
-  .farbpunkt { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--ink);
-               vertical-align: -1px; margin-right: 4px; }
-  .sim { border-style: dashed; }
-  .breit { grid-column: 1 / -1; }
-  label.schalter { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
-  table.pos { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
-  table.pos td, table.pos th { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: right; }
-  table.pos td:first-child, table.pos th:first-child { text-align: left; }
-  #platzdialog { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
-                 align-items: center; justify-content: center; padding: 16px; z-index: 4; }
-  #platzdialog.offen { display: flex; }
-  #platzdialog > div { background: var(--panel); border-radius: 10px; padding: 16px; min-width: 260px; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+button, select, input { font: inherit; color: inherit; }
+
+/* ---------- Kopfzeile ---------- */
+.kopf { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+        padding: 8px 18px; background: var(--kopf); color: var(--kopf-ink); border-bottom: 1px solid var(--kopf-line); }
+.marke { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo { width: 34px; height: 34px; border-radius: 6px; background: var(--accent); color: #fff; display: grid;
+        place-items: center; font-weight: 800; font-size: 12px; letter-spacing: .04em; flex: none; }
+.marke b { display: block; font-size: 15px; letter-spacing: .01em; }
+.marke small { display: block; color: var(--kopf-muted); font-size: 11.5px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 6px;
+        border: 1px solid var(--kopf-line); font-size: 12px; color: var(--kopf-ink); background: rgba(255,255,255,.03); white-space: nowrap; }
+.chip small { color: var(--kopf-muted); font-size: 11px; }
+.punkt { width: 9px; height: 9px; border-radius: 50%; background: var(--kopf-muted); flex: none; }
+.punkt.READY { background: #36b25a; } .punkt.BUSY { background: #f0a020; } .punkt.ERROR { background: #ef4b50; }
+.punkt.CALIB { background: #9a82ea; }
+.spacer { flex: 1; }
+.uhr { font: 600 13px var(--mono); color: var(--kopf-muted); }
+.kbtn { background: transparent; border: 1px solid var(--kopf-line); color: var(--kopf-ink); padding: 7px 12px;
+        border-radius: 6px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+.kbtn:hover { background: rgba(255,255,255,.06); }
+.kbtn.aktiv { background: var(--accent); border-color: var(--accent); color: #fff; }
+#nothalt { background: #c62026; color: #fff; border: 2px solid #ffd400; border-radius: 6px; padding: 7px 16px;
+           font-weight: 800; letter-spacing: .06em; cursor: pointer; box-shadow: 0 0 0 1px #000 inset; }
+#nothalt:active { transform: translateY(1px); }
+
+/* ---------- Alarmleiste ---------- */
+#alarme { display: flex; flex-direction: column; }
+.alarm { display: flex; gap: 12px; align-items: center; padding: 8px 18px; font-weight: 500; border-bottom: 1px solid var(--line); }
+.alarm.err { background: var(--err-soft); color: var(--ink); border-left: 5px solid var(--err); }
+.alarm.warn { background: var(--warn-soft); border-left: 5px solid var(--warn); }
+.alarm .sym { font-weight: 800; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 3px; color: #fff; flex: none; font-size: 12px; }
+.alarm.err .sym { background: var(--err); } .alarm.warn .sym { background: var(--warn); }
+.alarm .txt { flex: 1; min-width: 0; }
+
+/* ---------- Navigation ---------- */
+nav { display: flex; gap: 2px; padding: 0 18px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px 8px; cursor: pointer;
+             color: var(--ink2); font-weight: 550; white-space: nowrap; }
+nav button:hover { color: var(--ink); }
+nav button.aktiv { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------- Layout ---------- */
+.tab { display: none; padding: 14px 18px 28px; max-width: 1560px; margin: 0 auto; }
+.tab.aktiv { display: block; }
+.raster { display: grid; gap: 14px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.s12 { grid-column: span 12; } .s8 { grid-column: span 8; } .s7 { grid-column: span 7; } .s6 { grid-column: span 6; }
+.s5 { grid-column: span 5; } .s4 { grid-column: span 4; } .s3 { grid-column: span 3; }
+@media (max-width: 1100px) { .s8, .s7, .s6, .s5, .s4, .s3 { grid-column: span 12; } }
+.spalte { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; display: flex; flex-direction: column; }
+.panel > header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+                  background: var(--panel-kopf); border-radius: 6px 6px 0 0; min-height: 38px; flex-wrap: wrap; }
+.panel > header h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; font-weight: 700; color: var(--ink2); }
+.panel > header .rechts { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.panel .inhalt { padding: 12px; min-width: 0; }
+.panel .fuss { padding: 8px 12px; border-top: 1px solid var(--line2); font-size: 12px; color: var(--ink2); }
+h3 { font-size: 13px; margin: 0 0 8px; font-weight: 650; }
+.klein { font-size: 12px; color: var(--muted); }
+.mono { font-family: var(--mono); }
+
+/* ---------- Kennzahl-Kacheln ---------- */
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; min-width: 0; }
+.kpi .lbl { font-size: 11.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .kz { font-size: 22px; font-weight: 650; line-height: 1.25; margin-top: 2px; }
+.kpi .kz small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.kpi .sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meter { height: 6px; background: var(--line2); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+/* ---------- Bedienelemente ---------- */
+.btn { padding: 7px 12px; border-radius: 5px; border: 1px solid var(--line); background: var(--feld); cursor: pointer;
+       display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--ink2); }
+.btn.haupt { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.haupt:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.gefahr { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+.btn.klein { padding: 3px 8px; font-size: 12px; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+select, input[type=number] { padding: 6px 8px; border-radius: 5px; border: 1px solid var(--line); background: var(--feld); }
+input[type=number] { width: 80px; }
+.reihe { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.reihe + .reihe { margin-top: 8px; }
+.lbl { color: var(--ink2); font-size: 12px; min-width: 84px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--feld); }
+.seg button { border: 0; background: none; padding: 6px 11px; cursor: pointer; border-right: 1px solid var(--line);
+              display: inline-flex; align-items: center; gap: 6px; }
+.seg button:last-child { border-right: 0; }
+.seg button.an { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.schalter { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.schalter input { position: absolute; opacity: 0; pointer-events: none; }
+.schalter .bahn { width: 34px; height: 19px; border-radius: 10px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.schalter .bahn::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.schalter input:checked + .bahn { background: var(--ok); }
+.schalter input:checked + .bahn::after { left: 17px; }
+.schalter input:focus-visible + .bahn { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wp { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; flex: none; border: 1px solid rgba(0,0,0,.25); }
+.wp.WHITE { background: var(--wp-white); border-color: var(--wp-white-rand); } .wp.RED { background: var(--wp-red); }
+.wp.BLUE { background: var(--wp-blue); } .wp.LEER { background: none; border: 1.5px solid var(--behaelter); border-radius: 2px; }
+.wp.FREI { background: none; border: 1.5px dashed var(--behaelter); border-radius: 2px; }
+.wp.NONE, .wp.X { background: var(--line); }
+
+/* ---------- Status-Plaketten ---------- */
+.tag { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: 3px; font-size: 11.5px;
+       font-weight: 600; border: 1px solid var(--line); color: var(--ink2); background: var(--feld); white-space: nowrap; }
+.tag.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.tag.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.tag.err { background: var(--err-soft); color: var(--err); border-color: transparent; }
+.tag.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.tag.zone { font-family: var(--mono); min-width: 22px; justify-content: center; }
+
+/* ---------- Tabellen ---------- */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650;
+     padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.zahl, th.zahl { text-align: right; }
+tr.aktiv-zeile td { background: var(--accent-soft); }
+.leer-hinweis { padding: 16px; text-align: center; color: var(--muted); }
+
+/* ---------- Regal ---------- */
+.regal-wrap { position: relative; }
+svg { display: block; width: 100%; height: auto; }
+#regal .platz { cursor: pointer; }
+#regal .platz:hover .rahmen { stroke: var(--accent); stroke-width: 7; }
+.legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); }
+.legende span { display: inline-flex; gap: 6px; align-items: center; }
+.rbg-info { display: flex; gap: 18px; flex-wrap: wrap; }
+.rbg-info b { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+
+/* ---------- Signale / Werte ---------- */
+.signale { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 600px) { .signale { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.signal { border: 1px solid var(--line2); border-radius: 5px; padding: 7px 9px; background: var(--feld); min-width: 0; }
+.signal span { display: block; font-size: 11px; color: var(--muted); }
+.signal b { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; margin-top: 1px; }
+.eingaenge { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.ein { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 5px 7px; border: 1px solid var(--line2); border-radius: 4px; background: var(--feld); }
+.led { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+.led.an { background: #2fbf59; box-shadow: 0 0 5px #2fbf59; }
+.ein small { color: var(--muted); display: block; font-size: 10px; line-height: 1.15; }
+.hinweis { padding: 8px 10px; border-radius: 4px; background: var(--accent-soft); margin-bottom: 10px; font-size: 12.5px; }
+.hinweis.fehler { background: var(--err-soft); }
+.protokoll { font: 11.5px/1.55 var(--mono); max-height: 300px; overflow: auto; white-space: pre-wrap; margin: 0; padding: 8px 10px;
+             background: var(--feld); border-radius: 4px; border: 1px solid var(--line2); color: var(--ink2); }
+.protokoll.hoch { max-height: 560px; }
+.werte { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.werte.vier { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wert { border: 1px solid var(--line2); border-radius: 5px; padding: 7px 9px; background: var(--feld); min-width: 0; }
+.wert b { display: block; font: 600 17px/1.3 var(--mono); }
+.wert span { font-size: 11.5px; color: var(--muted); }
+table.pos { font: 12px var(--mono); }
+table.pos td { padding: 3px 6px; }
+
+/* ---------- Umlagerung ---------- */
+.schritte { list-style: none; margin: 10px 0; padding: 0; counter-reset: s; }
+.schritte li { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line2); }
+.schritte li:last-child { border-bottom: 0; }
+.schritte li::before { counter-increment: s; content: counter(s); width: 20px; height: 20px; border-radius: 50%; background: var(--line2);
+                       display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; }
+.schritte li.fertig::before { background: var(--ok); color: #fff; content: "✓"; }
+.schritte li.laeuft::before { background: var(--warn); color: #fff; }
+.umart { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.umart label { border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px; cursor: pointer; background: var(--feld); font-size: 12.5px; }
+.umart label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.umart input { margin: 0 6px 0 0; vertical-align: -2px; }
+
+/* ---------- Diagramme ---------- */
+.chart text { font-size: 11px; fill: var(--muted); }
+.chart .achse { stroke: var(--line); stroke-width: 1; }
+.chart .gitter { stroke: var(--line2); stroke-width: 1; }
+.chart .wert-text { fill: var(--ink2); font-weight: 600; }
+.chart rect.balken:hover, .chart circle.p:hover { opacity: .8; }
+.legende-chart { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); margin-bottom: 6px; flex-wrap: wrap; }
+.legende-chart i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 5px; }
+.heat { display: grid; grid-template-columns: 28px repeat(3, minmax(0, 1fr)); gap: 4px; }
+.heat div { border-radius: 4px; padding: 10px 6px; text-align: center; font-weight: 650; font-size: 15px; }
+.heat .kopfz { background: none; color: var(--muted); font-size: 11px; font-weight: 600; padding: 4px; display: grid; place-items: center; }
+.heat small { display: block; font-size: 10.5px; font-weight: 500; opacity: .85; }
+.fgbar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--panel); }
+.fgbar > div { height: 100%; min-width: 2px; }
+
+#meldung { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--kopf); color: var(--kopf-ink);
+           padding: 9px 16px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none;
+           max-width: calc(100% - 32px); z-index: 30; border-left: 4px solid var(--accent); }
+#meldung.zeigen { opacity: 1; } #meldung.fehler { border-left-color: var(--err); }
+.dialog { position: fixed; inset: 0; background: rgba(10,14,20,.45); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+.dialog.offen { display: flex; }
+.dialog > div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: min(420px, 100%); }
+.sim { border-style: dashed; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Lernfabrik</h1>
-  <span class="stpill">Hochregallager <span class="pill" id="hbw_status">–</span><span class="pill" id="hbw_zustand">–</span></span>
-  <span class="stpill" id="vgr_kopf">Greifer <span class="pill" id="vgr_status">–</span><span class="pill" id="vgr_zustand">–</span></span>
-  <span class="pill" id="modus">–</span>
-  <span class="pill" id="mqtt" hidden>MQTT</span>
+
+<header class="kopf">
+  <div class="marke"><div class="logo">HRL</div>
+    <div><b>Lagerleitstand</b><small>Lernfabrik 4.0 · Hochregallager &amp; Sauggreifer</small></div></div>
+  <div class="chips">
+    <span class="chip" id="chip_modus"><span class="punkt"></span><span>–</span></span>
+    <span class="chip" title="Hochregallager"><span class="punkt" id="hbw_led"></span>HRL <small id="hbw_zustand_k">–</small></span>
+    <span class="chip" id="chip_vgr" title="Sauggreifer"><span class="punkt" id="vgr_led"></span>Greifer <small id="vgr_zustand_k">–</small></span>
+    <span class="chip" id="chip_mqtt" hidden><span class="punkt"></span>MQTT</span>
+  </div>
   <span class="spacer"></span>
+  <button class="kbtn" id="btn_kpi" onclick="zeigeTab('kpi')" title="Kennzahlen anzeigen">
+    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14V9M6 14V5M10 14V7M14 14V2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Kennzahlen</button>
+  <span class="uhr" id="uhr">--:--:--</span>
   <button id="nothalt" onclick="befehl('alle','not_halt')">NOT-HALT</button>
 </header>
+<div id="alarme"></div>
 
-<nav>
-  <button class="aktiv" data-tab="uebersicht">Übersicht</button>
-  <button data-tab="hbw">Hochregallager</button>
-  <button data-tab="vgr" id="tab_vgr_knopf">Greifer</button>
+<nav id="nav">
+  <button class="aktiv" data-tab="leitstand">Leitstand</button>
+  <button data-tab="lager">Lager &amp; Umlagerung</button>
+  <button data-tab="kpi">Kennzahlen</button>
+  <button data-tab="hbw">Einrichten HRL</button>
+  <button data-tab="vgr" id="nav_vgr">Einrichten Greifer</button>
+  <button data-tab="protokoll">Protokoll</button>
 </nav>
 
-<!-- ===================== ÜBERSICHT ===================== -->
-<main class="tab raster aktiv" id="tab_uebersicht">
-  <div class="col">
-    <section>
-      <h2>Regal &amp; Position Hochregallager</h2>
-      <div class="hinweis" id="hbw_hinweis">Verbinde …</div>
-      <svg id="regal" aria-label="Seitenansicht Regal"></svg>
-      <p class="klein">Klick auf einen Lagerplatz (Hochregallager im Zustand IDLE oder FAULT), um die Belegung zu korrigieren.</p>
+<!-- ============================ LEITSTAND ============================ -->
+<main class="tab aktiv" id="tab_leitstand">
+  <div class="kpis" id="kpi_leiste"></div>
+  <div class="raster">
+    <section class="panel s8" style="align-self:start">
+      <header><h2>Hochregal · Frontansicht</h2>
+        <div class="rechts legende">
+          <span><i class="wp BLUE"></i>Behälter mit Werkstück</span>
+          <span><i class="wp LEER"></i>leerer Behälter</span>
+          <span><i class="wp FREI"></i>Platz frei</span>
+          <span><span class="tag warn">⇄</span>reserviert</span>
+        </div></header>
+      <div class="inhalt regal-wrap"><svg id="regal" role="img" aria-label="Frontansicht des Hochregals mit Förderband und Regalbediengerät"></svg></div>
+      <div class="fuss rbg-info">
+        <span>RBG X <b id="rbg_x">–</b></span><span>Y <b id="rbg_y">–</b></span><span>Ausleger <b id="rbg_z">–</b></span>
+        <span>Tätigkeit <b id="rbg_t" style="font-family:inherit">–</b></span>
+        <span class="spacer"></span><span id="zonen_info" class="klein"></span>
+      </div>
+    </section>
+
+    <div class="spalte s4">
+      <section class="panel" id="p_bestellen">
+        <header><h2>Auslagerauftrag anlegen</h2></header>
+        <div class="inhalt">
+          <div class="reihe"><span class="lbl">Werkstück</span>
+            <div class="seg" id="farbwahl">
+              <button data-f="WHITE" class="an"><i class="wp WHITE"></i>Weiß</button>
+              <button data-f="RED"><i class="wp RED"></i>Rot</button>
+              <button data-f="BLUE"><i class="wp BLUE"></i>Blau</button>
+            </div></div>
+          <div class="reihe"><span class="lbl">Priorität</span>
+            <div class="seg" id="priowahl"><button data-p="normal" class="an">Normal</button><button data-p="eilig">Eilig</button></div></div>
+          <div class="reihe" style="margin-top:12px">
+            <button class="btn haupt" id="btn_bestellen" onclick="bestellen()">Auftrag anlegen</button>
+            <span class="klein" id="verfuegbar"></span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Warteschlange</h2>
+          <div class="rechts"><span class="tag" id="q_zaehler">0 / 5</span></div></header>
+        <div class="inhalt" style="padding:0">
+          <table><thead><tr><th>#</th><th>Auftrag</th><th>Status</th><th class="zahl">Alter</th><th></th></tr></thead>
+            <tbody id="q_tabelle"></tbody></table>
+        </div>
+        <div class="fuss">
+          <div class="reihe"><span class="lbl">Vorrang</span>
+            <div class="seg" id="vorrang"><button data-v="EIN">Einlagerung zuerst</button><button data-v="AUS">Auslagerung zuerst</button></div></div>
+          <div class="klein" style="margin-top:6px">Reihenfolge: eilig vor normal → Vorrang → Eingang (FIFO). Max. 5 offene Aufträge.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Zuletzt erledigt</h2></header>
+        <div class="inhalt" style="padding:0"><table><tbody id="q_erledigt"></tbody></table></div>
+      </section>
+    </div>
+
+    <section class="panel s7" id="p_greifer">
+      <header><h2>Sauggreifer &amp; Übergabe</h2>
+        <div class="rechts">
+          <label class="schalter"><input type="checkbox" id="auto_annahme" onchange="befehl('vgr','auto_annahme',{an:this.checked})"><span class="bahn"></span>Eingabe automatisch annehmen</label>
+          <button class="btn klein" data-st="vgr" data-cmd="annehmen" onclick="befehl('vgr','annehmen')">Jetzt annehmen</button>
+        </div></header>
+      <div class="inhalt">
+        <div class="hinweis" id="vgr_hinweis">–</div>
+        <div class="signale">
+          <div class="signal"><span>Eingabe (I7)</span><b id="ue_eingabe">–</b></div>
+          <div class="signal"><span>Farbsensor</span><b id="ue_farbe">–</b></div>
+          <div class="signal"><span>Förderband</span><b id="ue_band">–</b></div>
+          <div class="signal"><span>Ausgabe (C4)</span><b id="ue_ausgabe">–</b></div>
+        </div>
+      </div>
+      <div class="fuss" id="ue_auftrag">Kein Auftrag in Arbeit</div>
+    </section>
+
+    <section class="panel s5">
+      <header><h2>Ereignisse</h2></header>
+      <div class="inhalt"><pre class="protokoll" id="protokoll_kurz" style="max-height:170px"></pre></div>
+    </section>
+
+    <section class="panel s12 sim" id="simbox" hidden>
+      <header><h2>Simulation</h2><div class="rechts klein">nur ohne Anlage (start.py --sim)</div></header>
+      <div class="inhalt reihe">
+        <span class="lbl">Eingabe</span>
+        <button class="btn" onclick="befehl('vgr','sim_einlegen',{farbe:'WHITE'})"><i class="wp WHITE"></i>Weiß einlegen</button>
+        <button class="btn" onclick="befehl('vgr','sim_einlegen',{farbe:'RED'})"><i class="wp RED"></i>Rot einlegen</button>
+        <button class="btn" onclick="befehl('vgr','sim_einlegen',{farbe:'BLUE'})"><i class="wp BLUE"></i>Blau einlegen</button>
+        <button class="btn" onclick="befehl('vgr','sim_einlegen',{farbe:'NONE'})">Unbekannt</button>
+        <span class="lbl" style="margin-left:16px">Ausgabe</span>
+        <button class="btn" onclick="befehl('vgr','sim_ausgabe',{belegt:true})">belegen</button>
+        <button class="btn" onclick="befehl('vgr','sim_ausgabe',{belegt:false})">leeren</button>
+      </div>
     </section>
   </div>
-  <div class="col">
-    <section id="vgr_uebersicht">
-      <h2>Greifer &amp; Ein-/Ausgabe</h2>
-      <div class="hinweis" id="vgr_hinweis">–</div>
-      <div class="werte vier">
-        <div class="wert"><span>Eingabe</span><b id="ue_eingabe">–</b></div>
-        <div class="wert"><span>Ausgabe</span><b id="ue_ausgabe">–</b></div>
-        <div class="wert"><span>Farbsensor</span><b id="ue_farbe">–</b><span id="ue_mv"></span></div>
-        <div class="wert"><span>Bestellung</span><b id="ue_best">–</b><span id="ue_beststate"></span></div>
+</main>
+
+<!-- ============================ LAGER ============================ -->
+<main class="tab" id="tab_lager">
+  <div class="raster">
+    <section class="panel s7">
+      <header><h2>Lagerplätze &amp; Inventur</h2>
+        <div class="rechts klein">Belegung: <b id="lager_summe">–</b></div></header>
+      <div class="inhalt" style="padding:0">
+        <table><thead><tr><th>Platz</th><th>Zone</th><th>Zustand</th><th>Inhalt</th><th class="zahl">Weg [Imp.]</th>
+          <th class="zahl">Zugriffe</th><th>Reservierung</th><th>Inventur</th></tr></thead><tbody id="platz_tabelle"></tbody></table>
       </div>
-      <h3>Werkstück bestellen (Auslagern → Ausgabe)</h3>
-      <div class="reihe">
-        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'WHITE'})"><span class="farbpunkt" style="background:var(--white)"></span>Weiß</button>
-        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'RED'})"><span class="farbpunkt" style="background:var(--red)"></span>Rot</button>
-        <button class="haupt" data-st="vgr" data-cmd="bestellen" onclick="befehl('vgr','bestellen',{farbe:'BLUE'})"><span class="farbpunkt" style="background:var(--blue)"></span>Blau</button>
-      </div>
-      <h3 style="margin-top:14px">Einlagern (Eingabe → Hochregallager)</h3>
-      <div class="reihe">
-        <label class="schalter"><input type="checkbox" id="auto_annahme" onchange="befehl('vgr','auto_annahme',{an:this.checked})"> Werkstück in der Eingabe automatisch annehmen</label>
-      </div>
-      <div class="reihe">
-        <button data-st="vgr" data-cmd="annehmen" onclick="befehl('vgr','annehmen')">Jetzt annehmen</button>
-      </div>
-      <div class="reihe" style="margin-top:14px">
-        <button data-st="hbw" data-cmd="quittieren" onclick="befehl('hbw','quittieren')">Fehler HBW quittieren</button>
-        <button data-st="vgr" data-cmd="quittieren" onclick="befehl('vgr','quittieren')">Fehler Greifer quittieren</button>
+      <div class="fuss">
+        <div class="reihe">
+          <button class="btn gefahr" data-st="hbw" data-cmd="lager_reset"
+            onclick="if(confirm('Lager zurücksetzen? Alle 9 Plätze gelten dann als leerer Behälter, Förderband leer.'))befehl('hbw','lager_reset')">Lager zurücksetzen</button>
+          <span class="klein">Inventur: Belegung nach Sichtprüfung am Regal korrigieren (nur im Ruhezustand oder nach Fehler).</span>
+        </div>
       </div>
     </section>
-    <section class="sim" id="simbox" hidden>
-      <h2>Simulation</h2>
-      <div class="reihe"><span class="lbl">Eingabe</span>
-        <button onclick="befehl('vgr','sim_einlegen',{farbe:'WHITE'})">Weiß einlegen</button>
-        <button onclick="befehl('vgr','sim_einlegen',{farbe:'RED'})">Rot einlegen</button>
-        <button onclick="befehl('vgr','sim_einlegen',{farbe:'BLUE'})">Blau einlegen</button>
-        <button onclick="befehl('vgr','sim_einlegen',{farbe:'NONE'})">Unbekannt</button></div>
-      <div class="reihe"><span class="lbl">Ausgabe</span>
-        <button onclick="befehl('vgr','sim_ausgabe',{belegt:true})">belegen</button>
-        <button onclick="befehl('vgr','sim_ausgabe',{belegt:false})">leeren</button></div>
+
+    <div class="spalte s5">
+      <section class="panel">
+        <header><h2>Umlagerung (manuell)</h2><div class="rechts" id="um_status"></div></header>
+        <div class="inhalt">
+          <div class="umart" id="umart"></div>
+          <div class="reihe"><span class="lbl" id="um_von_lbl">Von</span><select id="um_von"></select></div>
+          <div class="reihe"><span class="lbl" id="um_nach_lbl">Nach</span><select id="um_nach"></select></div>
+          <ol class="schritte" id="um_schritte"></ol>
+          <div class="reihe">
+            <button class="btn haupt" data-st="hbw" data-cmd="umlagern" onclick="umlagern()">Umlagerung starten</button>
+            <button class="btn" data-st="hbw" data-cmd="umlagern_stopp" onclick="befehl('hbw','umlagern_stopp')">Nach diesem Zug beenden</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Automatische Umlagerung (ABC)</h2></header>
+        <div class="inhalt">
+          <div class="reihe"><label class="schalter"><input type="checkbox" id="e_auto_umlagern"
+            onchange="einstellung('auto_umlagern', this.checked)"><span class="bahn"></span>Im Stillstand selbstständig umlagern</label></div>
+          <div class="reihe"><span class="lbl">Stillstand ab</span><input type="number" min="5" max="600" id="e_umlagern_nach_s"
+            onchange="einstellung('umlagern_nach_s', this.value)"><span class="klein">s ohne Auftrag und Greiferbewegung</span></div>
+          <div class="reihe"><span class="lbl">ABC-Fenster</span><input type="number" min="3" max="200" id="e_abc_fenster"
+            onchange="einstellung('abc_fenster', this.value)"><span class="klein">letzte Bestellungen</span></div>
+          <div class="reihe"><span class="lbl">Mindestens</span><input type="number" min="1" max="50" id="e_abc_min_bestellungen"
+            onchange="einstellung('abc_min_bestellungen', this.value)"><span class="klein">Bestellungen, bevor umgelagert wird</span></div>
+          <div class="reihe" style="margin-top:12px">
+            <button class="btn" data-st="hbw" data-cmd="umlagern_jetzt" onclick="befehl('hbw','umlagern_jetzt')">Jetzt optimieren</button>
+            <span class="klein" id="abc_status"></span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>ABC-Analyse nach Bestellhistorie</h2></header>
+        <div class="inhalt" style="padding:0">
+          <table><thead><tr><th>Farbe</th><th class="zahl">Bestellungen</th><th class="zahl">Anteil</th><th>Klasse</th><th>Zielzone (Plätze)</th></tr></thead>
+            <tbody id="abc_tabelle"></tbody></table>
+        </div>
+        <div class="fuss klein">Zonen nach Fahrweg vom Förderband: A = kürzester Weg. X und Y fahren gleichzeitig – es zählt die längere Strecke.</div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ============================ KENNZAHLEN ============================ -->
+<main class="tab" id="tab_kpi">
+  <div class="kpis" id="kpi_gross"></div>
+  <div class="raster">
+    <section class="panel s7">
+      <header><h2>Spielzeiten Regalbediengerät</h2><div class="rechts klein">netto = reine Fahrzeit · brutto = inkl. Warten auf den Greifer</div></header>
+      <div class="inhalt" style="padding:0">
+        <table><thead><tr><th>Spielart</th><th class="zahl">Anzahl</th><th class="zahl">Ø netto</th><th class="zahl">min</th>
+          <th class="zahl">max</th><th class="zahl">Ø brutto</th><th class="zahl">letztes</th></tr></thead><tbody id="spiel_tabelle"></tbody></table>
+      </div>
+      <div class="inhalt">
+        <div class="legende-chart"><span><i style="background:var(--s1)"></i>Einlagerung</span><span><i style="background:var(--s2)"></i>Auslagerung</span><span><i style="background:var(--s3)"></i>Umlagerung</span></div>
+        <svg class="chart" id="ch_verlauf" viewBox="0 0 640 200" aria-label="Verlauf der letzten Spielzeiten"></svg>
+        <div class="klein">Verlauf der letzten 25 Spiele je Art (Spielzeit netto in Sekunden)</div>
+      </div>
+    </section>
+
+    <section class="panel s5">
+      <header><h2>Wartezeiten an der Übergabe</h2></header>
+      <div class="inhalt">
+        <div class="legende-chart"><span><i style="background:var(--s1)"></i>Greifer wartet auf HRL</span><span><i style="background:var(--s2)"></i>HRL wartet auf Greifer</span></div>
+        <svg class="chart" id="ch_warte" viewBox="0 0 440 190" aria-label="Wartezeiten"></svg>
+      </div>
+      <div class="inhalt" style="padding-top:0">
+        <table><thead><tr><th>Übergabe</th><th>wartet</th><th class="zahl">Ø [s]</th><th class="zahl">max [s]</th><th class="zahl">Summe [s]</th></tr></thead>
+          <tbody id="warte_tabelle"></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel s5">
+      <header><h2>Durchsatz je Stunde</h2><div class="rechts klein">letzte 8 Stunden</div></header>
+      <div class="inhalt">
+        <div class="legende-chart"><span><i style="background:var(--s1)"></i>Einlagerungen</span><span><i style="background:var(--s2)"></i>Auslagerungen</span></div>
+        <svg class="chart" id="ch_durchsatz" viewBox="0 0 440 190" aria-label="Durchsatz je Stunde"></svg>
+      </div>
+      <div class="fuss" id="durchlauf_info"></div>
+    </section>
+
+    <section class="panel s4">
+      <header><h2>Zugriffe je Lagerplatz</h2></header>
+      <div class="inhalt"><div class="heat" id="heat"></div>
+        <div class="klein" style="margin-top:8px">Ein- und Auslagerungen inkl. Umlagerungen. Dunkler = häufiger.</div></div>
+    </section>
+
+    <section class="panel s3">
+      <header><h2>Füllgrad</h2></header>
+      <div class="inhalt" id="fuellgrad"></div>
+    </section>
+
+    <section class="panel s12">
+      <header><h2>Datenbasis</h2></header>
+      <div class="inhalt reihe">
+        <span class="klein" id="kpi_basis"></span><span class="spacer"></span>
+        <button class="btn gefahr" onclick="if(confirm('Alle Kennzahlen und die Bestellhistorie löschen?'))befehl('hbw','kennzahlen_reset')">Kennzahlen zurücksetzen</button>
+      </div>
     </section>
   </div>
-  <section class="breit">
-    <h2>Protokoll</h2>
-    <pre class="protokoll" id="protokoll_alle"></pre>
+</main>
+
+<!-- ============================ EINRICHTEN HRL ============================ -->
+<main class="tab" id="tab_hbw">
+  <div class="raster">
+    <div class="spalte s6">
+      <section class="panel">
+        <header><h2>Achsen Regalbediengerät</h2></header>
+        <div class="inhalt">
+          <div class="werte">
+            <div class="wert"><span>X horizontal</span><b id="hbw_xpos">–</b><span id="hbw_xst"></span></div>
+            <div class="wert"><span>Y vertikal</span><b id="hbw_ypos">–</b><span id="hbw_yst"></span></div>
+            <div class="wert"><span>Ausleger Z</span><b id="hbw_zpos">–</b><span id="hbw_zst"></span></div>
+          </div>
+          <h3>Eingänge</h3>
+          <div class="eingaenge" id="hbw_eingaenge"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <header><h2>Handbetrieb</h2><div class="rechts klein">nur im Zustand IDLE</div></header>
+        <div class="inhalt">
+          <div class="reihe"><span class="lbl">X</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="x"></span></div>
+          <div class="reihe"><span class="lbl">Y</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="y"></span></div>
+          <div class="reihe"><span class="lbl">Ausleger</span>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_ein')">Einfahren</button>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_aus')">Ausfahren</button></div>
+          <div class="reihe"><span class="lbl">Band</span>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_rein')">Rein (1,0 s)</button>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_raus')">Raus (1,2 s)</button></div>
+          <div class="reihe"><span class="lbl">Anfahren</span>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_pos')">Förderband</button>
+            <select id="hplatz"></select>
+            <button class="btn" data-st="hbw" data-cmd="hand" onclick="hand('hbw','platz',{platz:val('hplatz')})">Platz</button></div>
+          <div class="reihe" style="margin-top:12px">
+            <button class="btn" data-st="hbw" data-cmd="referenzfahrt" onclick="befehl('hbw','referenzfahrt')">Referenzfahrt (0/0)</button>
+            <button class="btn" data-st="hbw" data-cmd="kalibrieren" onclick="befehl('hbw','kalibrieren')">Kalibrieren</button>
+            <button class="btn" data-st="hbw" data-cmd="quittieren" onclick="befehl('hbw','quittieren')">Fehler quittieren</button>
+          </div>
+          <p class="klein">Im Automatikbetrieb fährt das RBG nur beim Start auf 0/0. Danach bleibt es nach jeder Aktion an seiner Position stehen.</p>
+        </div>
+      </section>
+      <section class="panel" id="hbw_kalib" hidden>
+        <header><h2>Kalibrierung Hochregallager</h2><div class="rechts klein">aktiv: <b id="hbw_kpos">–</b></div></header>
+        <div class="inhalt">
+          <div class="reihe"><span class="lbl">Position</span>
+            <button class="btn" data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'CV'})">Band (CV)</button>
+            <button class="btn" data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'A1'})">A1</button>
+            <button class="btn" data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'B2'})">B2</button>
+            <button class="btn" data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'C3'})">C3</button></div>
+          <div class="reihe"><span class="lbl">X (horiz.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="x"></span></div>
+          <div class="reihe"><span class="lbl">Y (vert.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="y"></span></div>
+          <div class="reihe">
+            <button class="btn haupt" data-st="hbw" data-cmd="kalib_speichern" onclick="befehl('hbw','kalib_speichern')">Position speichern</button>
+            <button class="btn" data-st="hbw" data-cmd="kalib_ende" onclick="befehl('hbw','kalib_ende')">Kalibrierung beenden</button></div>
+          <p class="klein" id="hbw_kwerte"></p>
+        </div>
+      </section>
+    </div>
+    <div class="spalte s6">
+      <section class="panel">
+        <header><h2>Lagerfunktionen von Hand</h2><div class="rechts klein">Einzeltest ohne Greifer</div></header>
+        <div class="inhalt">
+          <p class="klein" style="margin-top:0">Läuft der Greifer, steuert er das Hochregallager über die Warteschlange selbst.</p>
+          <div class="reihe"><span class="lbl">Werkstück</span>
+            <select id="hand_farbe"><option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select></div>
+          <div class="reihe"><span class="lbl">Einlagern</span>
+            <button class="btn" data-st="hbw" data-cmd="behaelter_holen" onclick="befehl('hbw','behaelter_holen',{farbe:val('hand_farbe')})">1 · Leerbehälter bereitstellen</button>
+            <button class="btn" data-st="hbw" data-cmd="einlagern" onclick="befehl('hbw','einlagern',{farbe:val('hand_farbe')})">2 · Einlagern</button></div>
+          <div class="reihe"><span class="lbl">Auslagern</span>
+            <button class="btn" data-st="hbw" data-cmd="auslagern" onclick="befehl('hbw','auslagern',{farbe:val('hand_farbe')})">1 · Auslagern</button>
+            <button class="btn" data-st="hbw" data-cmd="entnommen" onclick="befehl('hbw','entnommen')">2 · Entnahme quittieren</button></div>
+          <div class="reihe"><span class="lbl"></span>
+            <button class="btn" data-st="hbw" data-cmd="abbrechen" onclick="befehl('hbw','abbrechen')">Übergabe abbrechen</button></div>
+        </div>
+      </section>
+      <section class="panel">
+        <header><h2>Protokoll Hochregallager</h2></header>
+        <div class="inhalt"><pre class="protokoll" id="protokoll_hbw"></pre></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ============================ EINRICHTEN GREIFER ============================ -->
+<main class="tab" id="tab_vgr">
+  <div class="raster">
+    <div class="spalte s6">
+      <section class="panel">
+        <header><h2>Achsen &amp; Sauger</h2></header>
+        <div class="inhalt">
+          <div class="werte vier">
+            <div class="wert"><span>Drehung (X)</span><b id="vgr_xpos">–</b><span id="vgr_xst"></span></div>
+            <div class="wert"><span>Höhe (Y)</span><b id="vgr_ypos">–</b><span id="vgr_yst"></span></div>
+            <div class="wert"><span>Arm (Z)</span><b id="vgr_zpos">–</b><span id="vgr_zst"></span></div>
+            <div class="wert"><span>Sauger</span><b id="vgr_sauger">–</b></div>
+          </div>
+          <h3>Eingänge</h3>
+          <div class="eingaenge" id="vgr_eingaenge"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <header><h2>Handbetrieb</h2><div class="rechts klein">nur im Zustand IDLE</div></header>
+        <div class="inhalt">
+          <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="x"></span></div>
+          <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="y"></span></div>
+          <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="z"></span></div>
+          <div class="reihe"><span class="lbl">Anfahren</span><select id="vgr_punkt"></select>
+            <button class="btn" data-st="vgr" data-cmd="hand" onclick="hand('vgr','punkt',{punkt:val('vgr_punkt')})">Punkt anfahren</button></div>
+          <div class="reihe"><span class="lbl">Sauger</span>
+            <button class="btn" data-st="vgr" data-cmd="hand" onclick="hand('vgr','greifen')">Ansaugen</button>
+            <button class="btn" data-st="vgr" data-cmd="hand" onclick="hand('vgr','loslassen')">Loslassen</button></div>
+          <div class="reihe" style="margin-top:12px">
+            <button class="btn" data-st="vgr" data-cmd="referenzfahrt" onclick="befehl('vgr','referenzfahrt')">Referenzfahrt</button>
+            <button class="btn" data-st="vgr" data-cmd="kalibrieren" onclick="befehl('vgr','kalibrieren')">Positionen kalibrieren</button>
+            <button class="btn" data-st="vgr" data-cmd="farbkalibrieren" onclick="befehl('vgr','farbkalibrieren')">Farbsensor kalibrieren</button>
+            <button class="btn" data-st="vgr" data-cmd="quittieren" onclick="befehl('vgr','quittieren')">Fehler quittieren</button></div>
+        </div>
+      </section>
+      <section class="panel" id="vgr_kalib" hidden>
+        <header><h2>Kalibrierung Greifer-Positionen</h2></header>
+        <div class="inhalt">
+          <div class="hinweis" id="vgr_khinweis"></div>
+          <div class="reihe" id="vgr_kpunkte"></div>
+          <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="x"></span></div>
+          <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="y"></span></div>
+          <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="z"></span></div>
+          <div class="reihe">
+            <button class="btn haupt" data-st="vgr" data-cmd="kalib_speichern" onclick="befehl('vgr','kalib_speichern')">Position speichern</button>
+            <button class="btn" data-st="vgr" data-cmd="kalib_ende" onclick="befehl('vgr','kalib_ende')">Kalibrierung beenden</button></div>
+          <p class="klein">Wie im Original werden beim Speichern die Anfahrpunkte („…0“) in Drehung bzw. Arm mit angepasst.</p>
+        </div>
+      </section>
+      <section class="panel" id="vgr_farbkalib" hidden>
+        <header><h2>Kalibrierung Farbsensor</h2></header>
+        <div class="inhalt">
+          <p class="klein" style="margin-top:0">Nacheinander ein weißes, rotes und blaues Werkstück unter den Farbsensor legen und jeweils „messen“ drücken.</p>
+          <div class="werte">
+            <div class="wert"><span>Weiß</span><b id="fk_WHITE">–</b><button class="btn klein" data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'WHITE'})">messen</button></div>
+            <div class="wert"><span>Rot</span><b id="fk_RED">–</b><button class="btn klein" data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'RED'})">messen</button></div>
+            <div class="wert"><span>Blau</span><b id="fk_BLUE">–</b><button class="btn klein" data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'BLUE'})">messen</button></div>
+          </div>
+          <div class="reihe">
+            <button class="btn haupt" data-st="vgr" data-cmd="farbkalib_speichern" onclick="befehl('vgr','farbkalib_speichern')">Schwellwerte berechnen &amp; speichern</button>
+            <button class="btn" data-st="vgr" data-cmd="farbkalib_ende" onclick="befehl('vgr','farbkalib_ende')">Abbrechen</button></div>
+        </div>
+      </section>
+    </div>
+    <div class="spalte s6">
+      <section class="panel">
+        <header><h2>Farbsensor</h2></header>
+        <div class="inhalt">
+          <div class="werte">
+            <div class="wert"><span>Messwert live</span><b id="vgr_mv">–</b></div>
+            <div class="wert"><span>erkannte Farbe</span><b id="vgr_flive">–</b></div>
+            <div class="wert"><span>Schwellen</span><b id="vgr_th" style="font-size:14px">–</b></div>
+          </div>
+          <p class="klein">Weiß: 200 mV bis Schwelle 1 · Rot: bis Schwelle 2 · Blau: bis 2000 mV</p>
+        </div>
+      </section>
+      <section class="panel">
+        <header><h2>Gespeicherte Positionen</h2></header>
+        <div class="inhalt"><table class="pos"><thead><tr><th>Punkt</th><th class="zahl">Drehung</th><th class="zahl">Höhe</th><th class="zahl">Arm</th></tr></thead>
+          <tbody id="vgr_postab"></tbody></table></div>
+      </section>
+      <section class="panel">
+        <header><h2>Protokoll Greifer</h2></header>
+        <div class="inhalt"><pre class="protokoll" id="protokoll_vgr"></pre></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ============================ PROTOKOLL ============================ -->
+<main class="tab" id="tab_protokoll">
+  <section class="panel">
+    <header><h2>Ereignisprotokoll (alle Stationen)</h2></header>
+    <div class="inhalt"><pre class="protokoll hoch" id="protokoll_alle"></pre></div>
   </section>
 </main>
 
-<!-- ===================== HOCHREGALLAGER ===================== -->
-<main class="tab raster" id="tab_hbw">
-  <div class="col">
-    <section>
-      <h2>Ablauf Hochregallager (Handsteuerung)</h2>
-      <p class="klein" style="margin-top:0">Für den Einzeltest ohne Greifer. Läuft der Greifer, steuert er das Hochregallager selbst.</p>
-      <div class="ablauf">
-        <div>
-          <h3>Einlagern</h3>
-          <div class="schritt"><span class="nr">1</span>
-            <button class="haupt" data-st="hbw" data-cmd="behaelter_holen" onclick="befehl('hbw','behaelter_holen')">Leeren Behälter holen</button></div>
-          <div class="schritt"><span class="nr">2</span>
-            <select id="farbe_ein"><option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select>
-            <button class="haupt" data-st="hbw" data-cmd="einlagern" onclick="befehl('hbw','einlagern',{farbe:val('farbe_ein')})">Einlagern</button></div>
-        </div>
-        <div>
-          <h3>Auslagern</h3>
-          <div class="schritt"><span class="nr">1</span>
-            <select id="farbe_aus"><option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select>
-            <button class="haupt" data-st="hbw" data-cmd="auslagern" onclick="befehl('hbw','auslagern',{farbe:val('farbe_aus')})">Auslagern</button></div>
-          <div class="schritt"><span class="nr">2</span>
-            <button class="haupt" data-st="hbw" data-cmd="behaelter_zurueck" onclick="befehl('hbw','behaelter_zurueck')">Leeren Behälter zurück</button></div>
-        </div>
+<!-- Dialog Lagerplatz -->
+<div class="dialog" id="platzdialog" onclick="if(event.target===this)platzDialog(false)"><div>
+  <section class="panel" style="border:0">
+    <header><h2>Lagerplatz <span id="pd_name"></span></h2>
+      <div class="rechts"><button class="btn klein" onclick="platzDialog(false)">Schließen</button></div></header>
+    <div class="inhalt">
+      <div class="signale" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div class="signal"><span>Zustand</span><b id="pd_zustand">–</b></div>
+        <div class="signal"><span>Zone</span><b id="pd_zone">–</b></div>
+        <div class="signal"><span>Zugriffe</span><b id="pd_zugriffe">–</b></div>
       </div>
-      <div class="schritt" style="margin-top:14px">
-        <button data-st="hbw" data-cmd="referenzfahrt" onclick="befehl('hbw','referenzfahrt')">Referenzfahrt</button>
-        <button data-st="hbw" data-cmd="kalibrieren" onclick="befehl('hbw','kalibrieren')">Kalibrieren</button>
-        <button data-st="hbw" data-cmd="lager_reset" onclick="if(confirm('Lager zurücksetzen? Alle Plätze gelten dann als leere Behälter.'))befehl('hbw','lager_reset')">Lager zurücksetzen</button>
-        <button data-st="hbw" data-cmd="quittieren" onclick="befehl('hbw','quittieren')">Fehler quittieren</button>
-      </div>
-    </section>
-
-    <section id="hbw_kalib" hidden>
-      <h2>Kalibrierung Hochregallager</h2>
-      <div class="reihe"><span class="lbl">Position</span>
-        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'CV'})">Band (CV)</button>
-        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'A1'})">A1</button>
-        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'B2'})">B2</button>
-        <button data-st="hbw" data-cmd="kalib_waehle" onclick="befehl('hbw','kalib_waehle',{pos:'C3'})">C3</button>
-        <span class="klein">aktiv: <b id="hbw_kpos">–</b></span>
-      </div>
-      <div class="reihe"><span class="lbl">X (horiz.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="x"></span></div>
-      <div class="reihe"><span class="lbl">Y (vert.)</span><span class="jog" data-st="hbw" data-cmd="kalib_jog" data-achse="y"></span></div>
-      <div class="reihe">
-        <button class="haupt" data-st="hbw" data-cmd="kalib_speichern" onclick="befehl('hbw','kalib_speichern')">Position speichern</button>
-        <button data-st="hbw" data-cmd="kalib_ende" onclick="befehl('hbw','kalib_ende')">Kalibrierung beenden</button>
-      </div>
-      <p class="klein" id="hbw_kwerte"></p>
-    </section>
-  </div>
-
-  <div class="col">
-    <section>
-      <h2>Achsen</h2>
-      <div class="werte">
-        <div class="wert"><span>X horizontal</span><b id="hbw_xpos">–</b><span id="hbw_xst"></span></div>
-        <div class="wert"><span>Y vertikal</span><b id="hbw_ypos">–</b><span id="hbw_yst"></span></div>
-        <div class="wert"><span>Ausleger Z</span><b id="hbw_zpos">–</b><span id="hbw_zst"></span></div>
-      </div>
-      <h2>Eingänge</h2>
-      <div class="eingaenge" id="hbw_eingaenge"></div>
-    </section>
-    <section>
-      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
-      <div class="reihe"><span class="lbl">X</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="x"></span></div>
-      <div class="reihe"><span class="lbl">Y</span><span class="jog" data-st="hbw" data-cmd="hand" data-achse="y"></span></div>
-      <div class="reihe"><span class="lbl">Ausleger</span>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_ein')">Einfahren</button>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','ausleger_aus')">Ausfahren</button></div>
-      <div class="reihe"><span class="lbl">Band</span>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_rein')">Rein (1,0 s)</button>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_raus')">Raus (1,2 s)</button></div>
-      <div class="reihe"><span class="lbl">Anfahren</span>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','band_pos')">Band</button>
-        <select id="hplatz"></select>
-        <button data-st="hbw" data-cmd="hand" onclick="hand('hbw','platz',{platz:val('hplatz')})">Platz</button></div>
-    </section>
-    <section>
-      <h2>Protokoll Hochregallager</h2>
-      <pre class="protokoll" id="protokoll_hbw"></pre>
-    </section>
-  </div>
-</main>
-
-<!-- ===================== GREIFER ===================== -->
-<main class="tab raster" id="tab_vgr">
-  <div class="col">
-    <section>
-      <h2>Achsen &amp; Sauger</h2>
-      <div class="werte vier">
-        <div class="wert"><span>Drehung (X)</span><b id="vgr_xpos">–</b><span id="vgr_xst"></span></div>
-        <div class="wert"><span>Höhe (Y)</span><b id="vgr_ypos">–</b><span id="vgr_yst"></span></div>
-        <div class="wert"><span>Arm (Z)</span><b id="vgr_zpos">–</b><span id="vgr_zst"></span></div>
-        <div class="wert"><span>Sauger</span><b id="vgr_sauger">–</b></div>
-      </div>
-      <h2>Eingänge</h2>
-      <div class="eingaenge" id="vgr_eingaenge"></div>
-    </section>
-
-    <section>
-      <h2>Handbetrieb <span class="klein" style="text-transform:none;letter-spacing:0">(nur im Zustand IDLE)</span></h2>
-      <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="x"></span></div>
-      <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="y"></span></div>
-      <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="hand" data-achse="z"></span></div>
-      <div class="reihe"><span class="lbl">Anfahren</span>
-        <select id="vgr_punkt"></select>
-        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','punkt',{punkt:val('vgr_punkt')})">Punkt anfahren</button></div>
-      <div class="reihe"><span class="lbl">Sauger</span>
-        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','greifen')">Ansaugen</button>
-        <button data-st="vgr" data-cmd="hand" onclick="hand('vgr','loslassen')">Loslassen</button></div>
-      <div class="reihe" style="margin-top:12px">
-        <button data-st="vgr" data-cmd="referenzfahrt" onclick="befehl('vgr','referenzfahrt')">Referenzfahrt</button>
-        <button data-st="vgr" data-cmd="kalibrieren" onclick="befehl('vgr','kalibrieren')">Positionen kalibrieren</button>
-        <button data-st="vgr" data-cmd="farbkalibrieren" onclick="befehl('vgr','farbkalibrieren')">Farbsensor kalibrieren</button>
-        <button data-st="vgr" data-cmd="quittieren" onclick="befehl('vgr','quittieren')">Fehler quittieren</button>
-      </div>
-    </section>
-
-    <section id="vgr_kalib" hidden>
-      <h2>Kalibrierung Greifer-Positionen</h2>
-      <div class="hinweis" id="vgr_khinweis"></div>
-      <div class="reihe" id="vgr_kpunkte"></div>
-      <div class="reihe"><span class="lbl">Drehung</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="x"></span></div>
-      <div class="reihe"><span class="lbl">Höhe</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="y"></span></div>
-      <div class="reihe"><span class="lbl">Arm</span><span class="jog" data-st="vgr" data-cmd="kalib_jog" data-achse="z"></span></div>
-      <div class="reihe">
-        <button class="haupt" data-st="vgr" data-cmd="kalib_speichern" onclick="befehl('vgr','kalib_speichern')">Position speichern</button>
-        <button data-st="vgr" data-cmd="kalib_ende" onclick="befehl('vgr','kalib_ende')">Kalibrierung beenden</button>
-      </div>
-      <p class="klein">Wie im Original werden beim Speichern die Anfahrpunkte („…0“) in Drehung bzw. Arm mit angepasst.</p>
-    </section>
-
-    <section id="vgr_farbkalib" hidden>
-      <h2>Kalibrierung Farbsensor</h2>
-      <p class="klein" style="margin-top:0">Nacheinander ein weißes, rotes und blaues Werkstück unter den Farbsensor legen und jeweils „messen“ drücken.</p>
-      <div class="werte">
-        <div class="wert"><span>Weiß</span><b id="fk_WHITE">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'WHITE'})">messen</button></div>
-        <div class="wert"><span>Rot</span><b id="fk_RED">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'RED'})">messen</button></div>
-        <div class="wert"><span>Blau</span><b id="fk_BLUE">–</b><button data-st="vgr" data-cmd="farbe_messen" onclick="befehl('vgr','farbe_messen',{farbe:'BLUE'})">messen</button></div>
-      </div>
-      <div class="reihe">
-        <button class="haupt" data-st="vgr" data-cmd="farbkalib_speichern" onclick="befehl('vgr','farbkalib_speichern')">Schwellwerte berechnen &amp; speichern</button>
-        <button data-st="vgr" data-cmd="farbkalib_ende" onclick="befehl('vgr','farbkalib_ende')">Abbrechen</button>
-      </div>
-    </section>
-  </div>
-
-  <div class="col">
-    <section>
-      <h2>Farbsensor</h2>
-      <div class="werte">
-        <div class="wert"><span>Messwert live</span><b id="vgr_mv">–</b></div>
-        <div class="wert"><span>erkannte Farbe</span><b id="vgr_flive">–</b></div>
-        <div class="wert"><span>Schwellen</span><b id="vgr_th" style="font-size:14px">–</b></div>
-      </div>
-      <p class="klein">Weiß: 200 mV bis Schwelle 1 · Rot: bis Schwelle 2 · Blau: bis 2000 mV</p>
-    </section>
-    <section>
-      <h2>Gespeicherte Positionen</h2>
-      <table class="pos"><thead><tr><th>Punkt</th><th>Drehung</th><th>Höhe</th><th>Arm</th></tr></thead><tbody id="vgr_postab"></tbody></table>
-    </section>
-    <section>
-      <h2>Protokoll Greifer</h2>
-      <pre class="protokoll" id="protokoll_vgr"></pre>
-    </section>
-  </div>
-</main>
-
-<div id="platzdialog"><div>
-  <h3 style="margin-top:0">Lagerplatz <span id="pdname"></span></h3>
-  <div class="reihe">
-    <select id="pdfarbe"><option value="LEER">leerer Behälter</option><option value="WHITE">Weiß</option>
-      <option value="RED">Rot</option><option value="BLUE">Blau</option></select>
-  </div>
-  <div class="reihe">
-    <button class="haupt" onclick="platzSpeichern()">Übernehmen</button>
-    <button onclick="platzDialog(false)">Abbrechen</button>
-  </div>
+      <div class="reihe" style="margin-top:12px"><span class="lbl">Inventur</span>
+        <select id="pd_wert"><option value="FREI">kein Behälter</option><option value="LEER">leerer Behälter</option>
+          <option value="WHITE">Weiß</option><option value="RED">Rot</option><option value="BLUE">Blau</option></select>
+        <button class="btn" id="pd_speichern" onclick="platzSpeichern()">Übernehmen</button></div>
+      <div class="reihe"><span class="lbl">Umlagern</span>
+        <button class="btn" onclick="umlagernVon()">Von hier umlagern …</button></div>
+    </div>
+  </section>
 </div></div>
 <div id="meldung"></div>
 
 <script>
 const $ = id => document.getElementById(id);
 const val = id => $(id).value;
-const FARBE = { WHITE: 'var(--white)', RED: 'var(--red)', BLUE: 'var(--blue)', NONE: '#999' };
-const FARBNAME = { WHITE: 'weiß', RED: 'rot', BLUE: 'blau', NONE: '–' };
-const BESTELLUNG = { WAITING_FOR_ORDER: 'keine', ORDERED: 'bestellt', IN_PROCESS: 'unterwegs', SHIPPED: 'ausgeliefert' };
+const PLAETZE = ['A1','A2','A3','B1','B2','B3','C1','C2','C3'];
+const FARBNAME = { WHITE: 'Weiß', RED: 'Rot', BLUE: 'Blau', NONE: 'unbekannt' };
+const INHALT = v => v === 'FREI' ? 'kein Behälter' : v === 'LEER' ? 'leerer Behälter' : FARBNAME[v] || v;
+const WPVAR = { WHITE: 'var(--wp-white)', RED: 'var(--wp-red)', BLUE: 'var(--wp-blue)' };
+const ZUSTAND_TEXT = {
+  INIT: 'Startet', IDLE: 'Bereit', FETCH_CONTAINER: 'Leerbehälter bereitstellen', STORE_WP: 'Wartet auf Werkstück',
+  FETCH_WP: 'Auslagern', FETCH_WP_WAIT: 'Wartet auf Entnahme', UMLAGERN: 'Umlagern', CALIB_HBW: 'Kalibrierung',
+  CALIB_HBW_NAV: 'Kalibrierung', CALIB_HBW_MOVE: 'Kalibrierung', FAULT: 'Störung',
+  START_DELIVERY: 'Holt Werkstück', COLOR_DETECTION: 'Farberkennung', NFC_RAW: 'NFC', NFC_REJECTED: 'Ausschleusen',
+  WRONG_COLOR: 'Ausschleusen', STORE_WP_VGR: 'Fährt zum HRL', FETCH_WP_VGR: 'Fährt zum HRL', VGR_WAIT_FETCHED: 'Wartet auf HRL',
+  MOVE_PICKUP_WAIT: 'Zur Ausgabe', MOVE_PICKUP: 'Zur Ausgabe', CALIB_VGR: 'Kalibrierung', CALIB_VGR_MOVE: 'Kalibrierung',
+  CALIB_DPS: 'Farbkalibrierung', CALIB_DPS_NEXT: 'Farbkalibrierung'
+};
+const PHASE_TEXT = { EINGABE: 'Werkstück liegt in der Eingabe', GREIFER: 'Greifer: Aufnahme & Farberkennung',
+  UEBERGEBEN: 'HRL lagert ein', ANGEFORDERT: 'HRL lagert aus', AM_BAND: 'Greifer entnimmt am Band', ENTNOMMEN: 'Greifer → Ausgabe' };
 const NAMEN_HBW = { 1: 'Lichtschr. außen', 4: 'Lichtschr. innen', 5: 'Ref. X', 6: 'Ausleger ein', 7: 'Ausleger aus', 8: 'Ref. Y' };
 const NAMEN_VGR = { 1: 'Ref. Drehung', 2: 'Ref. Höhe', 3: 'Ref. Arm', 7: 'Lichtschr. Eingabe', 8: 'Farbsensor (analog)' };
-const HINWEISE_HBW = {
-  INIT: 'Referenzfahrt läuft …',
-  IDLE: 'Bereit.',
-  FETCH_CONTAINER: 'Leerer Behälter wird geholt …',
-  STORE_WP: 'Behälter steht am Band – wartet auf das Werkstück.',
-  FETCH_WP: 'Werkstück wird ausgelagert …',
-  FETCH_WP_WAIT: 'Werkstück steht am Band – wartet auf Entnahme.',
-  STORE_CONTAINER: 'Leerer Behälter wird zurückgelagert …',
-  CALIB_HBW: 'Kalibrierung startet …', CALIB_HBW_NAV: 'Kalibrierposition wird angefahren …',
-  CALIB_HBW_MOVE: 'Kalibrierung: Position justieren und speichern (Reiter „Hochregallager“).',
-  FAULT: 'Fehler – Ursache beheben, dann quittieren (danach Referenzfahrt).'
-};
-const HINWEISE_VGR = {
-  INIT: 'Referenzfahrt läuft …',
-  IDLE: 'Bereit – Werkstück in die Eingabe legen oder eine Farbe bestellen.',
-  CALIB_VGR_MOVE: 'Kalibrierung der Positionen (Reiter „Greifer“).',
-  CALIB_DPS_NEXT: 'Kalibrierung des Farbsensors (Reiter „Greifer“).',
-  FAULT: 'Fehler – Ursache beheben, dann quittieren (danach Referenzfahrt).'
-};
-let S = null;
+let S = null, K = null, farbe = 'WHITE', prio = 'normal';
+const fmt = (v, n = 1) => v === null || v === undefined ? '–' : Number(v).toFixed(n).replace('.', ',');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const wpDot = v => `<i class="wp ${v}"></i>`;
 
 // ---------- Befehle ----------
-function meldung(t) { const m = $('meldung'); m.textContent = t; m.classList.add('zeigen');
-  clearTimeout(m._t); m._t = setTimeout(() => m.classList.remove('zeigen'), 2800); }
+function meldung(t, fehler = false) {
+  const m = $('meldung'); m.textContent = t; m.classList.add('zeigen'); m.classList.toggle('fehler', fehler);
+  clearTimeout(m._t); m._t = setTimeout(() => m.classList.remove('zeigen'), 3200);
+}
 async function befehl(station, b, daten = {}) {
   try {
     const r = await fetch('/api/befehl', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ station, befehl: b, ...daten }) });
-    const j = await r.json(); meldung(j.meldung); aktualisieren();
-  } catch (e) { meldung('Keine Verbindung zum Python-Programm'); }
+    const j = await r.json(); if (j.meldung) meldung(j.meldung, !j.ok); aktualisieren(); return j;
+  } catch (e) { meldung('Keine Verbindung zum Python-Programm', true); }
 }
 const hand = (st, aktion, d = {}) => befehl(st, 'hand', { aktion, ...d });
+const einstellung = (name, wert) => befehl('hbw', 'einstellung', { name, wert });
+function bestellen() { befehl('lvs', 'bestellen', { farbe, prio }); }
 
-// ---------- Aufbau ----------
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('aktiv', x === b));
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('aktiv', t.id === 'tab_' + b.dataset.tab));
-  try { localStorage.setItem('tab', b.dataset.tab); } catch (e) {}
-});
-try { const t = localStorage.getItem('tab'); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch (e) {}
+// ---------- Navigation ----------
+function zeigeTab(t) {
+  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('aktiv', x.dataset.tab === t));
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('aktiv', x.id === 'tab_' + t));
+  $('btn_kpi').classList.toggle('aktiv', t === 'kpi');
+  try { localStorage.setItem('tab', t); } catch (e) {}
+  if (t === 'kpi') kennzahlenLaden();
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => zeigeTab(b.dataset.tab));
+try { const t = localStorage.getItem('tab'); if (t && $('tab_' + t)) zeigeTab(t); } catch (e) {}
 
+function segment(id, attr, setze) {
+  $(id).querySelectorAll('button').forEach(b => b.onclick = () => {
+    $(id).querySelectorAll('button').forEach(x => x.classList.toggle('an', x === b)); setze(b.dataset[attr]);
+  });
+}
+segment('farbwahl', 'f', v => { farbe = v; verfuegbarZeigen(); });
+segment('priowahl', 'p', v => prio = v);
+$('vorrang').querySelectorAll('button').forEach(b => b.onclick = () => befehl('lvs', 'vorrang', { wert: b.dataset.v }));
+
+// Jog-Knöpfe
 document.querySelectorAll('.jog').forEach(el => {
   el.innerHTML = [-200, -50, -10, 10, 50, 200].map(s =>
-    `<button data-st="${el.dataset.st}" data-cmd="${el.dataset.cmd}" data-jog="${el.dataset.achse}" data-s="${s}">${s > 0 ? '+' : '−'}${Math.abs(s)}</button>`).join(' ');
+    `<button class="btn klein" data-st="${el.dataset.st}" data-cmd="${el.dataset.cmd}" data-jog="${el.dataset.achse}" data-s="${s}">${s > 0 ? '+' : '−'}${Math.abs(s)}</button>`).join(' ');
 });
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-jog]'); if (!b) return;
   const st = b.dataset.st, achse = b.dataset.jog, s = +b.dataset.s;
-  if (b.dataset.cmd === 'kalib_jog') befehl(st, 'kalib_jog', { achse, schritte: s });
-  else hand(st, achse, { schritte: s });
+  if (b.dataset.cmd === 'kalib_jog') befehl(st, 'kalib_jog', { achse, schritte: s }); else hand(st, achse, { schritte: s });
 });
-$('hplatz').innerHTML = ['A1','A2','A3','B1','B2','B3','C1','C2','C3'].map(p => `<option>${p}</option>`).join('');
+$('hplatz').innerHTML = PLAETZE.map(p => `<option>${p}</option>`).join('');
 function eingaengeAufbauen(id, namen, extra = '') {
   $(id).innerHTML = [1,2,3,4,5,6,7,8].map(n =>
     `<div class="ein"><span class="led" id="${id}${n}"></span><div>I${n}<small>${namen[n] || '–'}</small></div></div>`).join('') + extra;
 }
 eingaengeAufbauen('hbw_eingaenge', NAMEN_HBW);
-eingaengeAufbauen('vgr_eingaenge', NAMEN_VGR,
-  `<div class="ein"><span class="led" id="vgr_c4"></span><div>C4<small>Lichtschr. Ausgabe</small></div></div>`);
+eingaengeAufbauen('vgr_eingaenge', NAMEN_VGR, `<div class="ein"><span class="led" id="vgr_c4"></span><div>C4<small>Lichtschr. Ausgabe</small></div></div>`);
 
+// ---------- Umlagerung (manuell) ----------
+const UM_ARTEN = { tauschen: 'Tauschen über Förderstrecke', verschieben: 'Auf freien Platz verschieben',
+                   band_einlagern: 'Behälter vom Band einlagern', abstellen: 'Behälter auf Band abstellen' };
+$('umart').innerHTML = Object.entries(UM_ARTEN).map(([k, t], i) =>
+  `<label><input type="radio" name="umart" value="${k}" ${i === 0 ? 'checked' : ''}>${t}</label>`).join('');
+let umArt = 'tauschen';
+document.querySelectorAll('input[name=umart]').forEach(r => r.onchange = () => { umArt = r.value; umAufbauen(true); });
+$('um_von').onchange = $('um_nach').onchange = () => umAufbauen(false);
+function umAufbauen(neu) {
+  if (!S) return;
+  const pl = S.hbw.plaetze, mit = PLAETZE.filter(p => pl[p].zustand !== 'FREI'), frei = PLAETZE.filter(p => pl[p].zustand === 'FREI');
+  const opt = (liste, alt) => liste.map(p => `<option value="${p}" ${p === alt ? 'selected' : ''}>${p} · ${INHALT(belegung(p))}</option>`).join('')
+    || '<option value="">– keiner –</option>';
+  const von = $('um_von').value, nach = $('um_nach').value;
+  const zeigeVon = umArt !== 'band_einlagern', zeigeNach = umArt !== 'abstellen';
+  $('um_von').parentElement.hidden = !zeigeVon; $('um_nach').parentElement.hidden = !zeigeNach;
+  $('um_von_lbl').textContent = umArt === 'tauschen' ? 'Platz 1' : 'Von';
+  $('um_nach_lbl').textContent = umArt === 'tauschen' ? 'Platz 2' : 'Nach';
+  if (document.activeElement !== $('um_von')) $('um_von').innerHTML = opt(mit, von);
+  if (document.activeElement !== $('um_nach'))
+    $('um_nach').innerHTML = umArt === 'tauschen' ? opt(mit.filter(p => p !== $('um_von').value), nach) : opt(frei, nach);
+  const a = $('um_von').value || '?', b = $('um_nach').value || '?';
+  const schritte = { tauschen: [`${a} → Förderstrecke abstellen`, `${b} → ${a} umlagern`, `Förderstrecke → ${b} einlagern`],
+    verschieben: [`${a} → ${b}`], band_einlagern: [`Förderstrecke → ${b}`], abstellen: [`${a} → Förderstrecke`] }[umArt];
+  const plan = S.hbw.plan, laeuft = S.hbw.zustand === 'UMLAGERN';
+  if (laeuft && plan.zuege.length) {
+    $('um_schritte').innerHTML = plan.zuege.map(([v, n], i) =>
+      `<li class="${i < plan.index ? 'fertig' : i === plan.index ? 'laeuft' : ''}">${ortName(v)} → ${ortName(n)}</li>`).join('');
+    $('um_status').innerHTML = `<span class="tag warn">${plan.art === 'auto' ? 'Automatisch' : 'Manuell'} · Zug ${Math.min(plan.index + 1, plan.zuege.length)}/${plan.zuege.length}</span>`;
+  } else {
+    $('um_schritte').innerHTML = schritte.map(s => `<li>${s}</li>`).join('');
+    $('um_status').innerHTML = '';
+  }
+}
+const ortName = o => o === 'BAND' ? 'Förderstrecke' : o;
+function belegung(p) { const x = S.hbw.plaetze[p]; return x.zustand === 'BELEGT' ? x.wp.type : x.zustand; }
+function umlagern() { befehl('hbw', 'umlagern', { art: umArt, von: val('um_von'), nach: val('um_nach') }); }
+
+// ---------- Lagerplatz-Dialog ----------
+let pdPlatz = null;
 function platzDialog(offen, name) {
   $('platzdialog').classList.toggle('offen', offen);
-  if (offen) { $('pdname').textContent = name; const w = S.hbw.lager[name]; $('pdfarbe').value = w ? w.type : 'LEER'; }
+  if (!offen || !S) return;
+  pdPlatz = name; const x = S.hbw.plaetze[name], st = S.hbw.strategie;
+  $('pd_name').textContent = name;
+  $('pd_zustand').innerHTML = wpDot(belegung(name)) + INHALT(belegung(name));
+  $('pd_zone').textContent = st.zone_je_platz[name] || '–';
+  $('pd_zugriffe').textContent = K ? K.zugriffe[name] : '–';
+  $('pd_wert').value = belegung(name);
+  $('pd_speichern').disabled = !S.hbw.erlaubt.includes('platz_setzen') || !!S.hbw.gesperrt;
 }
-function platzSpeichern() { befehl('hbw', 'platz_setzen', { platz: $('pdname').textContent, farbe: val('pdfarbe') }); platzDialog(false); }
+function platzSpeichern() { befehl('hbw', 'platz_setzen', { platz: pdPlatz, wert: val('pd_wert') }); platzDialog(false); }
+function umlagernVon() {
+  platzDialog(false); zeigeTab('lager');
+  const z = S.hbw.plaetze[pdPlatz].zustand;
+  const art = z === 'FREI' ? 'band_einlagern' : (PLAETZE.some(p => S.hbw.plaetze[p].zustand === 'FREI') ? 'verschieben' : 'tauschen');
+  document.querySelector(`input[name=umart][value=${art}]`).checked = true; umArt = art; umAufbauen(true);
+  if (art === 'band_einlagern') $('um_nach').value = pdPlatz; else $('um_von').value = pdPlatz;
+  umAufbauen(false);
+}
 
 // ---------- Regal-Zeichnung ----------
-function regalZeichnen(s) {
-  const k = s.kalibrierung, svg = $('regal'), W = 480, H = 300;
-  const x0 = Math.min(k.conv.x - 180, k.hbx[0] - W / 2, 0) - 40;
-  const x1 = Math.max(k.hbx[2] + W / 2, s.x.ende) + 40;
-  const y0 = Math.min(k.hby[0] - H / 2 + 40, 0) - 60;
-  const y1 = Math.max(k.hby[2] + H / 2 + 80, k.conv.y + 290, s.y.ende) + 20;
+function regalZeichnen(h) {
+  const k = h.kalibrierung, pl = h.plaetze, st = h.strategie, svg = $('regal');
+  const dx = k.hbx[1] - k.hbx[0], dy = k.hby[1] - k.hby[0];
+  const W = dx * 0.9, H = dy * 0.92;
+  const x0 = Math.min(k.conv.x - 520, k.hbx[0] - W / 2) - 30, x1 = k.hbx[2] + W / 2 + 40;
+  const y0 = k.hby[0] - H / 2 - 90, y1 = Math.max(k.hby[2] + H / 2 + 60, k.conv.y + 220);
   svg.setAttribute('viewBox', `${x0} ${y0} ${x1 - x0} ${y1 - y0}`);
-  let h = '';
+  const fehl = new Set(st.fehlplatziert || []), t = h.transport;
+  let s = '';
+  // Regalrahmen
+  s += `<rect x="${k.hbx[0] - W / 2 - 14}" y="${k.hby[0] - H / 2 - 14}" width="${k.hbx[2] - k.hbx[0] + W + 28}" height="${k.hby[2] - k.hby[0] + H + 28}"
+        fill="var(--regal-fill)" stroke="var(--regal)" stroke-width="6" rx="6"/>`;
   for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
-    const name = 'ABC'[j] + (i + 1), cx = k.hbx[i], cy = k.hby[j], wp = s.lager[name];
-    const markiert = s.naechster_platz === name;
-    h += `<g style="cursor:pointer" onclick="if(S.hbw.erlaubt.includes('platz_setzen'))platzDialog(true,'${name}');else meldung('Nur im Zustand IDLE oder FAULT änderbar')">
-      <rect x="${cx - W/2}" y="${cy - H/2 + 60}" width="${W}" height="${H}" rx="14" fill="none"
-        stroke="${markiert ? 'var(--warn)' : 'var(--rack)'}" stroke-width="${markiert ? 14 : 8}"/>
-      <rect x="${cx - 150}" y="${cy + 20}" width="300" height="150" rx="10" fill="var(--rack)" opacity=".55"/>
-      ${wp ? `<circle cx="${cx}" cy="${cy + 70}" r="62" fill="${FARBE[wp.type]}" stroke="var(--ink)" stroke-width="5"/>` : ''}
-      <text x="${cx - W/2 + 20}" y="${cy - H/2 + 120}" font-size="64" font-weight="700" fill="var(--muted)">${name}</text></g>`;
+    const name = 'ABC'[j] + (i + 1), cx = k.hbx[i], cy = k.hby[j], p = pl[name], zone = st.zone_je_platz[name];
+    const res = p.reserviert, rx = cx - W / 2, ry = cy - H / 2;
+    const fach = ry + H - 26;                   // Fachboden
+    s += `<g class="platz" onclick="platzDialog(true,'${name}')"><title>${name} · Zone ${zone} · ${INHALT(belegung(name))}${res ? ' · reserviert (' + res + ')' : ''}</title>
+      <rect class="rahmen" x="${rx}" y="${ry}" width="${W}" height="${H}" rx="8" fill="var(--zone${zone})"
+        stroke="${res ? 'var(--warn)' : 'var(--line)'}" stroke-width="${res ? 12 : 3}" ${res ? 'stroke-dasharray="34 18"' : ''}/>
+      <line x1="${rx + 20}" y1="${fach}" x2="${rx + W - 20}" y2="${fach}" stroke="var(--regal)" stroke-width="10" stroke-linecap="round"/>
+      <text x="${rx + 24}" y="${ry + 62}" font-size="54" font-weight="700" fill="var(--ink2)">${name}</text>
+      <text x="${rx + W - 24}" y="${ry + 60}" font-size="40" text-anchor="end" font-weight="700" fill="var(--muted)" font-family="monospace">${zone}</text>`;
+    s += behaelterSvg(cx, fach, p.zustand, p.wp);
+    if (fehl.has(name)) s += `<g><title>Nicht in seiner ABC-Zone – wird im Stillstand umgelagert</title>
+        <circle cx="${rx + W - 46}" cy="${ry + H - 90}" r="26" fill="var(--warn)"/><text x="${rx + W - 46}" y="${ry + H - 76}" font-size="38" font-weight="800" text-anchor="middle" fill="#fff">!</text></g>`;
+    if (res) s += `<text x="${cx}" y="${ry + 58}" font-size="38" text-anchor="middle" font-weight="700" fill="var(--warn)">${res === 'Quelle' ? '▲ Quelle' : '▼ Ziel'}</text>`;
+    s += '</g>';
   }
-  const c = k.conv;
-  h += `<rect x="${c.x - 140}" y="${c.y + 170}" width="300" height="34" rx="17" fill="var(--belt)"/>
-        <text x="${c.x - 140}" y="${c.y + 270}" font-size="56" fill="var(--muted)">Band</text>`;
-  const x = s.x.pos, y = s.y.pos, aus = s.z.ausgefahren;
-  h += `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="var(--accent)" stroke-width="6" stroke-dasharray="20 16" opacity=".7"/>
-        <line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="var(--accent)" stroke-width="6" stroke-dasharray="20 16" opacity=".7"/>
-        <rect x="${x - 90}" y="${y - 40}" width="180" height="80" rx="12" fill="var(--accent)"/>
-        <text x="${x}" y="${y + 18}" font-size="50" text-anchor="middle" fill="var(--accent-ink)" font-weight="700">${aus ? 'AUS' : 'EIN'}</text>`;
-  svg.innerHTML = h;
+  // Förderband (Übergabe zum Greifer)
+  const c = k.conv, bx = c.x - 470, bw = 520, by = c.y + 150, b = pl.BAND;
+  s += `<g><title>Förderstrecke · ${INHALT(belegung('BAND'))}${b.reserviert ? ' · reserviert' : ''}</title>
+    <rect x="${bx}" y="${by}" width="${bw}" height="44" rx="22" fill="var(--behaelter-fill)" stroke="${b.reserviert ? 'var(--warn)' : 'var(--regal)'}" stroke-width="${b.reserviert ? 10 : 5}"/>`;
+  for (let r = 0; r < 6; r++) s += `<circle cx="${bx + 40 + r * 88}" cy="${by + 22}" r="13" fill="var(--regal)"/>`;
+  s += `<text x="${bx}" y="${by + 100}" font-size="44" fill="var(--ink2)" font-weight="600">Förderstrecke</text>
+        <text x="${bx}" y="${by + 146}" font-size="34" fill="var(--muted)">→ Greifer</text></g>`;
+  s += behaelterSvg(bx + bw / 2, by, b.zustand, b.wp);
+  // Regalbediengerät (Mast + Schlitten)
+  const x = h.x.pos, y = h.y.pos, aus = h.z.ausgefahren;
+  s += `<line x1="${x}" y1="${y0 + 10}" x2="${x}" y2="${y1 - 10}" stroke="var(--accent)" stroke-width="12" opacity=".35"/>
+    <g><title>Regalbediengerät: X ${x} · Y ${y} · Ausleger ${aus ? 'ausgefahren' : 'eingefahren'}</title>
+    <rect x="${x - 110}" y="${y - 46}" width="220" height="92" rx="10" fill="var(--accent)"/>
+    <text x="${x}" y="${y + 16}" font-size="44" text-anchor="middle" fill="var(--accent-ink)" font-weight="800">RBG${aus ? ' ⇥' : ''}</text></g>`;
+  svg.innerHTML = s;
+}
+function behaelterSvg(cx, boden, zustand, wp) {
+  const bw = 300, bh = 120, x = cx - bw / 2, y = boden - bh - 6;
+  if (zustand === 'FREI') return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="10" fill="none" stroke="var(--behaelter)" stroke-width="5" stroke-dasharray="22 16" opacity=".8"/>
+    <text x="${cx}" y="${y + bh / 2 + 15}" font-size="40" text-anchor="middle" fill="var(--muted)">frei</text>`;
+  let s = `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="10" fill="var(--behaelter-fill)" stroke="var(--behaelter)" stroke-width="6"/>`;
+  if (zustand === 'BELEGT' && wp) {
+    const f = WPVAR[wp.type] || 'var(--line)';
+    s += `<ellipse cx="${cx}" cy="${y + 8}" rx="96" ry="30" fill="${f}" stroke="${wp.type === 'WHITE' ? 'var(--wp-white-rand)' : 'rgba(0,0,0,.25)'}" stroke-width="5"/>
+          <rect x="${cx - 96}" y="${y - 50}" width="192" height="58" fill="${f}"/>
+          <ellipse cx="${cx}" cy="${y - 50}" rx="96" ry="30" fill="${f}" stroke="${wp.type === 'WHITE' ? 'var(--wp-white-rand)' : 'rgba(0,0,0,.25)'}" stroke-width="5"/>
+          <ellipse cx="${cx}" cy="${y - 50}" rx="40" ry="12" fill="rgba(0,0,0,.18)"/>`;
+  }
+  return s;
 }
 
 // ---------- Anzeige ----------
-function pill(id, s) { $(id + '_status').textContent = s.status; $(id + '_status').className = 'pill ' + s.status;
-  $(id + '_zustand').textContent = s.zustand; }
-function hinweis(id, s, texte, extra) {
-  const el = $(id);
-  el.textContent = (s.fehler ? 'Fehler: ' + s.fehler + ' — ' : '') + (extra || texte[s.zustand] || s.zustand) + (s.aktiv ? ' (fährt …)' : '');
-  el.className = 'hinweis' + (s.zustand === 'FAULT' ? ' fehler' : '');
-}
+function setzePunkt(id, s) { $(id).className = 'punkt ' + (s ? s.status : ''); }
 function protokoll(id, zeilen) {
-  const p = $(id), unten = p.scrollTop + p.clientHeight >= p.scrollHeight - 8;
+  const p = $(id); if (!p) return; const unten = p.scrollTop + p.clientHeight >= p.scrollHeight - 8;
   p.textContent = zeilen.join('\n'); if (unten) p.scrollTop = p.scrollHeight;
+}
+function alarmeZeigen(d) {
+  const a = [], h = d.hbw, v = d.vgr;
+  const quit = st => `<button class="btn klein" onclick="befehl('${st}','quittieren')">Quittieren</button>`;
+  if (h.zustand === 'FAULT') a.push(['err', 'Störung Hochregallager', h.fehler || '–', quit('hbw')]);
+  if (v && v.zustand === 'FAULT') a.push(['err', 'Störung Greifer', v.fehler || '–', quit('vgr')]);
+  if (h.klaerfall) a.push(['warn', 'Klärfall Lagerbestand', h.klaerfall,
+    `<button class="btn klein" onclick="zeigeTab('lager')">Inventur</button><button class="btn klein" onclick="befehl('hbw','klaerfall_ok')">Bestand geprüft</button>`]);
+  if (h.nothalt || (v && v.nothalt)) a.push(['err', 'NOT-HALT aktiv', 'Alle Motoren gestoppt – Ursache beseitigen, dann jede Station quittieren.', '']);
+  $('alarme').innerHTML = a.map(([k, t, txt, btn]) =>
+    `<div class="alarm ${k}"><span class="sym">${k === 'err' ? '!' : '?'}</span><div class="txt"><b>${t}:</b> ${esc(txt)}</div>${btn}</div>`).join('');
+}
+function kpiKachel(lbl, wert, einheit, sub, meter) {
+  return `<div class="kpi"><div class="lbl">${lbl}</div><div class="kz">${wert}<small>${einheit || ''}</small></div>
+    ${meter !== undefined ? `<div class="meter"><i style="width:${Math.max(0, Math.min(100, meter))}%"></i></div>` : `<div class="sub">${sub || '&nbsp;'}</div>`}</div>`;
+}
+function kpiLeiste() {
+  if (!K || !S) return;
+  const f = K.fuellgrad, sp = K.spiele, w = K.wartezeit_gesamt;
+  const offen = S.lvs ? S.lvs.offen.length : 0;
+  $('kpi_leiste').innerHTML =
+    kpiKachel('Füllgrad Lager', f.prozent, '%', '', f.prozent) +
+    kpiKachel('Durchsatz letzte Stunde', K.durchsatz.letzte_stunde, 'Spiele', `${K.durchsatz.letzte_stunde_ein} ein · ${K.durchsatz.letzte_stunde_aus} aus`) +
+    kpiKachel('Ø Spielzeit Einlagerung', fmt(sp.Einlagerung.netto.mittel), 's', `${sp.Einlagerung.netto.anzahl} Spiele · netto`) +
+    kpiKachel('Ø Spielzeit Auslagerung', fmt(sp.Auslagerung.netto.mittel), 's', `${sp.Auslagerung.netto.anzahl} Spiele · netto`) +
+    kpiKachel('Ø Wartezeit Greifer', fmt(w.Greifer.mittel), 's', `HRL wartet Ø ${fmt(w.HRL.mittel)} s`) +
+    kpiKachel('Offene Aufträge', offen, S.lvs ? `/ ${S.lvs.max}` : '', S.lvs ? `${S.lvs.offen.filter(a => a.status === 'AKTIV').length} in Arbeit` : 'ohne Greifer');
+}
+function verfuegbarZeigen() {
+  if (!S || !S.lvs) return;
+  const n = S.lvs.verfuegbar[farbe];
+  $('verfuegbar').textContent = `${n} ${FARBNAME[farbe].toLowerCase()} verfügbar`;
+}
+
+function queueZeigen(l) {
+  $('q_zaehler').textContent = `${l.offen.length} / ${l.max}`;
+  $('q_zaehler').className = 'tag' + (l.offen.length >= l.max ? ' warn' : '');
+  $('vorrang').querySelectorAll('button').forEach(b => b.classList.toggle('an', b.dataset.v === l.vorrang));
+  $('q_tabelle').innerHTML = l.offen.length ? l.offen.map(a => {
+    const st = a.status === 'AKTIV' ? `<span class="tag info">in Arbeit</span><div class="klein">${PHASE_TEXT[a.phase] || ''}</div>`
+      : a.text ? `<span class="tag warn">blockiert</span><div class="klein">${esc(a.text.replace('blockiert: ', ''))}</div>` : `<span class="tag">wartet</span>`;
+    const f = a.farbe ? `${wpDot(a.farbe)} ${FARBNAME[a.farbe]}` : '<span class="klein">Farbe folgt</span>';
+    const akt = a.status === 'WARTEND' ? `<button class="btn klein" title="Priorität umschalten" onclick="befehl('lvs','prio',{nr:${a.nr}})">${a.prio === 'eilig' ? 'normal' : 'eilig'}</button>
+      <button class="btn klein gefahr" title="Auftrag stornieren" onclick="befehl('lvs','stornieren',{nr:${a.nr}})">✕</button>` : '';
+    return `<tr class="${a.status === 'AKTIV' ? 'aktiv-zeile' : ''}"><td class="mono">${a.platz_in_reihe || '▶'}</td>
+      <td><b>${a.art === 'EIN' ? 'Einlagerung' : 'Auslagerung'}</b> <span class="klein">#${a.nr}</span>${a.prio === 'eilig' ? ' <span class="tag err">eilig</span>' : ''}<div>${f}</div></td>
+      <td>${st}</td><td class="zahl mono">${a.alter_s}s</td><td style="white-space:nowrap;text-align:right">${akt}</td></tr>`;
+  }).join('') : `<tr><td colspan="5" class="leer-hinweis">Keine offenen Aufträge</td></tr>`;
+  const STAT = { FERTIG: 'ok', STORNIERT: '', ABGEBROCHEN: 'err', AUSGESCHLEUST: 'warn' };
+  $('q_erledigt').innerHTML = l.erledigt.length ? l.erledigt.slice(0, 6).map(a =>
+    `<tr><td class="mono klein">${a.ende}</td><td>${a.art === 'EIN' ? 'Ein' : 'Aus'} ${a.farbe ? wpDot(a.farbe) : ''} <span class="klein">#${a.nr}</span></td>
+     <td><span class="tag ${STAT[a.status] || ''}">${a.status_text}</span></td><td class="zahl mono klein">${a.dauer_s !== null ? a.dauer_s + ' s' : ''}</td></tr>`).join('')
+    : `<tr><td class="leer-hinweis">–</td></tr>`;
+}
+
+function lagerTabelle(h) {
+  const st = h.strategie, pl = h.plaetze, z = K ? K.zugriffe : {};
+  const erlaubt = h.erlaubt.includes('platz_setzen') && !h.gesperrt;
+  const opts = w => ['FREI', 'LEER', 'WHITE', 'RED', 'BLUE'].map(o => `<option value="${o}" ${o === w ? 'selected' : ''}>${INHALT(o)}</option>`).join('');
+  const zeile = (p, name, zone, weg, zug, cmd) => {
+    const b = p === 'BAND' ? belegung('BAND') : belegung(p), x = pl[p];
+    const tag = x.zustand === 'BELEGT' ? 'info' : x.zustand === 'LEER' ? '' : 'warn';
+    return `<tr><td><b>${name}</b></td><td>${zone ? `<span class="tag zone">${zone}</span>` : ''}</td>
+      <td><span class="tag ${tag}">${x.zustand}</span></td><td>${wpDot(b)} ${INHALT(b)}</td>
+      <td class="zahl mono">${weg ?? ''}</td><td class="zahl mono">${zug ?? ''}</td>
+      <td>${x.reserviert ? `<span class="tag warn">${x.reserviert}</span>` : ''}</td>
+      <td><select ${erlaubt ? '' : 'disabled'} onchange="${cmd}(this.value)">${opts(b)}</select></td></tr>`;
+  };
+  if (!document.activeElement || document.activeElement.tagName !== 'SELECT' || !$('platz_tabelle').contains(document.activeElement))
+    $('platz_tabelle').innerHTML = PLAETZE.map(p => zeile(p, p, st.zone_je_platz[p], st.wegzeit[p], z[p],
+      `(w=>befehl('hbw','platz_setzen',{platz:'${p}',wert:w}))`)).join('') +
+      zeile('BAND', 'Förderstrecke', '', 0, '', `(w=>befehl('hbw','band_setzen',{wert:w}))`);
+  const f = PLAETZE.map(belegung);
+  $('lager_summe').textContent = `${f.filter(x => !['FREI','LEER'].includes(x)).length} Werkstücke · ${f.filter(x => x === 'LEER').length} leer · ${f.filter(x => x === 'FREI').length} frei · ${h.behaelter} Behälter`;
+
+  // ABC
+  $('abc_tabelle').innerHTML = ['WHITE', 'RED', 'BLUE'].map(c => {
+    const kl = st.klassen[c];
+    return `<tr><td>${wpDot(c)} ${FARBNAME[c]}</td><td class="zahl mono">${st.bestellungen[c]}</td><td class="zahl mono">${st.anteil[c]} %</td>
+      <td>${st.aktiv ? `<span class="tag zone">${kl}</span>` : '<span class="klein">–</span>'}</td>
+      <td class="mono klein">${st.aktiv ? st.zonen[kl].join(', ') : 'nach Wegzeit'}</td></tr>`;
+  }).join('');
+  $('abc_status').innerHTML = st.aktiv
+    ? (st.fehlplatziert.length ? `<span class="tag warn">${st.fehlplatziert.length} Werkstück(e) außerhalb ihrer Zone</span>` : '<span class="tag ok">Belegung entspricht ABC</span>')
+    : `<span class="tag">erst ab ${st.min_bestellungen} Bestellungen aktiv</span>`;
+  const e = h.einstellungen;
+  for (const n of ['umlagern_nach_s', 'abc_fenster', 'abc_min_bestellungen'])
+    if (document.activeElement !== $('e_' + n)) $('e_' + n).value = e[n];
+  $('e_auto_umlagern').checked = e.auto_umlagern;
+  umAufbauen(false);
 }
 
 function render(d) {
   S = d;
-  const h = d.hbw, v = d.vgr;
-  pill('hbw', h);
-  $('modus').textContent = h.modus;
-  if (d.mqtt !== null) { $('mqtt').hidden = false; $('mqtt').textContent = d.mqtt ? 'MQTT verbunden' : 'MQTT getrennt'; }
-  hinweis('hbw_hinweis', h, HINWEISE_HBW, h.gesperrt && h.zustand === 'IDLE' ? h.gesperrt : '');
+  const h = d.hbw, v = d.vgr, l = d.lvs;
+  $('uhr').textContent = d.zeit || '';
+  const sim = h.modus === 'Simulation';
+  $('chip_modus').innerHTML = `<span class="punkt" style="background:${sim ? '#9a82ea' : '#36b25a'}"></span>${sim ? 'Simulation' : 'Anlage (TXT)'}`;
+  setzePunkt('hbw_led', h); $('hbw_zustand_k').textContent = ZUSTAND_TEXT[h.zustand] || h.zustand;
+  $('chip_vgr').hidden = !v; $('nav_vgr').hidden = !v; $('p_greifer').hidden = !v;
+  $('p_bestellen').hidden = !l;
+  if (d.mqtt !== null) { $('chip_mqtt').hidden = false; $('chip_mqtt').querySelector('.punkt').style.background = d.mqtt ? '#36b25a' : '#ef4b50'; }
+  alarmeZeigen(d);
 
   // Knöpfe freigeben/sperren
   document.querySelectorAll('button[data-cmd]').forEach(b => {
@@ -483,32 +1008,38 @@ function render(d) {
     b.disabled = !st || !st.erlaubt.includes(b.dataset.cmd) || st.aktiv || (!!st.gesperrt && b.dataset.cmd !== 'quittieren');
   });
 
-  // Hochregallager
+  // Regal + RBG
+  regalZeichnen(h);
+  $('rbg_x').textContent = h.x.pos; $('rbg_y').textContent = h.y.pos;
+  $('rbg_z').textContent = h.z.ausgefahren ? 'ausgefahren' : (h.z.eingefahren ? 'eingefahren' : 'Mitte');
+  $('rbg_t').textContent = h.taetigkeit || (ZUSTAND_TEXT[h.zustand] || h.zustand);
+  const st = h.strategie;
+  $('zonen_info').textContent = st.aktiv ? `ABC aktiv · A = ${FARBNAME[Object.keys(st.klassen).find(c => st.klassen[c] === 'A')]}` : 'ABC: zu wenig Bestellungen – Platzwahl nach Wegzeit';
+  lagerTabelle(h);
+
+  // Einrichten HRL
   $('hbw_xpos').textContent = h.x.pos; $('hbw_xst').textContent = h.x.status;
   $('hbw_ypos').textContent = h.y.pos; $('hbw_yst').textContent = h.y.status;
-  $('hbw_zpos').textContent = h.z.ausgefahren ? 'aus' : (h.z.eingefahren ? 'ein' : 'mitte');
-  $('hbw_zst').textContent = h.z.status;
+  $('hbw_zpos').textContent = h.z.ausgefahren ? 'aus' : (h.z.eingefahren ? 'ein' : 'Mitte'); $('hbw_zst').textContent = h.z.status;
   for (let n = 1; n <= 8; n++) $('hbw_eingaenge' + n).classList.toggle('an', h.eingaenge['I' + n] === 1);
-  $('hbw_kalib').hidden = !h.zustand.startsWith('CALIB');
-  $('hbw_kpos').textContent = h.kalib_pos;
+  $('hbw_kalib').hidden = !h.zustand.startsWith('CALIB'); $('hbw_kpos').textContent = h.kalib_pos;
   const k = h.kalibrierung;
   $('hbw_kwerte').textContent = `Gespeichert: Spalten x = ${k.hbx.join(' / ')} · Zeilen y = ${k.hby.join(' / ')} · Band x=${k.conv.x} y=${k.conv.y}`;
-  regalZeichnen(h);
   protokoll('protokoll_hbw', h.protokoll);
 
-  // Greifer
-  const mitVgr = !!v;
-  $('vgr_kopf').hidden = !mitVgr; $('tab_vgr_knopf').hidden = !mitVgr; $('vgr_uebersicht').hidden = !mitVgr;
   let alle = h.protokoll;
-  if (mitVgr) {
-    pill('vgr', v);
-    hinweis('vgr_hinweis', v, HINWEISE_VGR, v.hinweis);
-    $('ue_eingabe').textContent = v.eingabe_belegt ? 'belegt' : 'frei';
-    $('ue_ausgabe').textContent = v.ausgabe_frei === null ? '–' : (v.ausgabe_frei ? 'frei' : 'belegt');
-    $('ue_farbe').innerHTML = `<span class="farbpunkt" style="background:${FARBE[v.farbe_live]}"></span>${FARBNAME[v.farbe_live]}`;
-    $('ue_mv').textContent = v.farbwert === null ? '' : v.farbwert + ' mV';
-    $('ue_best').textContent = v.bestellung.type === 'NONE' ? '–' : FARBNAME[v.bestellung.type];
-    $('ue_beststate').textContent = BESTELLUNG[v.bestellung.state] || v.bestellung.state;
+  if (l) { queueZeigen(l); verfuegbarZeigen(); }
+  if (v) {
+    setzePunkt('vgr_led', v); $('vgr_zustand_k').textContent = ZUSTAND_TEXT[v.zustand] || v.zustand;
+    const hw = $('vgr_hinweis');
+    hw.textContent = v.fehler ? 'Störung: ' + v.fehler : (v.hinweis || (v.zustand === 'IDLE' ? 'Bereit – wartet auf den nächsten Auftrag aus der Warteschlange.' : ZUSTAND_TEXT[v.zustand] || v.zustand));
+    hw.className = 'hinweis' + (v.zustand === 'FAULT' ? ' fehler' : '');
+    $('ue_eingabe').innerHTML = v.eingabe_belegt ? '<span class="led an"></span>belegt' : '<span class="led"></span>frei';
+    $('ue_ausgabe').innerHTML = v.ausgabe_frei === null ? '–' : (v.ausgabe_frei ? '<span class="led"></span>frei' : '<span class="led an"></span>belegt');
+    $('ue_farbe').innerHTML = `${wpDot(v.farbe_live)}${FARBNAME[v.farbe_live]} <span class="klein mono">${v.farbwert ?? ''} mV</span>`;
+    $('ue_band').innerHTML = `${wpDot(belegung('BAND'))}${INHALT(belegung('BAND'))}`;
+    $('ue_auftrag').innerHTML = v.auftrag ? `In Arbeit: <b>Auftrag #${v.auftrag.nr}</b> · ${v.auftrag.art === 'EIN' ? 'Einlagerung' : 'Auslagerung'} ${v.auftrag.farbe ? wpDot(v.auftrag.farbe) + FARBNAME[v.auftrag.farbe] : ''} · ${PHASE_TEXT[v.auftrag.phase] || ''}`
+      : 'Kein Auftrag in Arbeit';
     if (document.activeElement !== $('auto_annahme')) $('auto_annahme').checked = v.auto_annahme;
     $('simbox').hidden = !v.sim;
 
@@ -519,33 +1050,140 @@ function render(d) {
     for (let n = 1; n <= 8; n++) $('vgr_eingaenge' + n).classList.toggle('an', v.eingaenge['I' + n] === 1);
     $('vgr_c4').classList.toggle('an', v.ausgabe_frei === true);
     $('vgr_mv').textContent = v.farbwert === null ? '–' : v.farbwert + ' mV';
-    $('vgr_flive').innerHTML = `<span class="farbpunkt" style="background:${FARBE[v.farbe_live]}"></span>${FARBNAME[v.farbe_live]}`;
+    $('vgr_flive').innerHTML = `${wpDot(v.farbe_live)}${FARBNAME[v.farbe_live]}`;
     $('vgr_th').textContent = `${v.farbschwellen.th1} / ${v.farbschwellen.th2} mV`;
-
     const sel = $('vgr_punkt');
-    if (sel.options.length !== Object.keys(v.positionen).length)
-      sel.innerHTML = Object.keys(v.positionen).map(p => `<option>${p}</option>`).join('');
+    if (sel.options.length !== Object.keys(v.positionen).length) sel.innerHTML = Object.keys(v.positionen).map(p => `<option>${p}</option>`).join('');
     $('vgr_postab').innerHTML = Object.entries(v.positionen).map(([n, p]) =>
-      `<tr><td>${n}</td><td>${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td></tr>`).join('');
-
+      `<tr><td>${n}</td><td class="zahl">${p[0]}</td><td class="zahl">${p[1]}</td><td class="zahl">${p[2]}</td></tr>`).join('');
     $('vgr_kalib').hidden = !v.zustand.startsWith('CALIB_VGR');
     if ($('vgr_kpunkte').childElementCount === 0)
       $('vgr_kpunkte').innerHTML = Object.entries(v.kalib_punkte).map(([k2, n]) =>
-        `<button data-st="vgr" data-cmd="kalib_waehle" onclick="befehl('vgr','kalib_waehle',{punkt:'${k2}'})">${n}</button>`).join('');
+        `<button class="btn" data-st="vgr" data-cmd="kalib_waehle" onclick="befehl('vgr','kalib_waehle',{punkt:'${k2}'})">${n}</button>`).join('');
     $('vgr_khinweis').textContent = v.kalib_punkt ? `Aktiver Punkt: ${v.kalib_punkte[v.kalib_punkt]}` : 'Bitte einen Punkt wählen – der Greifer fährt ihn an.';
     $('vgr_farbkalib').hidden = !v.zustand.startsWith('CALIB_DPS');
     for (const f of ['WHITE', 'RED', 'BLUE']) $('fk_' + f).textContent = v.farb_messungen[f] ? v.farb_messungen[f] + ' mV' : '–';
     protokoll('protokoll_vgr', v.protokoll);
     alle = alle.concat(v.protokoll).sort((a, b) => a.slice(0, 8).localeCompare(b.slice(0, 8)));
   }
-  protokoll('protokoll_alle', alle.slice(-80));
+  protokoll('protokoll_kurz', alle.slice(-40));
+  protokoll('protokoll_alle', alle.slice(-200));
+  kpiLeiste();
+}
+
+// ---------- Kennzahlen ----------
+// Achsenmaximum mit "runden" Teilstrichen: 1·2·4·5·8·10 × 10^n
+function achsenMax(m) { if (m <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(m))); for (const f of [1, 2, 4, 5, 8, 10]) if (f * p >= m - 1e-9) return f * p; return 10 * p; }
+function yGitter(w, h, l, r, t, b, max, einheit) {
+  const f = max / Math.pow(10, Math.floor(Math.log10(max))), n = (f === 5 || f === 10) ? 5 : 4;
+  const schritt = max / n, nk = Number.isInteger(+schritt.toFixed(6)) ? 0 : (Number.isInteger(+(schritt * 10).toFixed(6)) ? 1 : 2);
+  let s = '';
+  for (let i = 0; i <= n; i++) {
+    const y = t + (h - t - b) * (1 - i / n), v = schritt * i;
+    s += `<line class="${i ? 'gitter' : 'achse'}" x1="${l}" x2="${w - r}" y1="${y}" y2="${y}"/><text x="${l - 6}" y="${y + 4}" text-anchor="end">${fmt(v, nk)}${i === n && einheit ? ' ' + einheit : ''}</text>`;
+  }
+  return s;
+}
+function balkenPfad(x, y, w, h) {            // 4px gerundet am Datenende, eckig an der Basis
+  const r = Math.min(4, w / 2, h); if (h <= 0) return '';
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+function chartVerlauf() {
+  const W = 640, H = 200, L = 40, R = 14, T = 12, B = 24, sp = K.spiele;
+  const reihen = [['Einlagerung', 'var(--s1)'], ['Auslagerung', 'var(--s2)'], ['Umlagerung', 'var(--s3)']];
+  const max = achsenMax(Math.max(1, ...reihen.flatMap(([a]) => sp[a].verlauf)));
+  let s = yGitter(W, H, L, R, T, B, max, 's');
+  const n = 25, x = i => L + (W - L - R) * (i / (n - 1)), y = v => T + (H - T - B) * (1 - v / max);
+  s += `<text x="${L}" y="${H - 6}">älter</text><text x="${W - R}" y="${H - 6}" text-anchor="end">neuestes Spiel</text>`;
+  for (const [art, farbe] of reihen) {
+    const v = sp[art].verlauf; if (!v.length) continue;
+    const off = n - v.length, pts = v.map((w, i) => `${x(off + i)},${y(w)}`).join(' ');
+    s += `<polyline points="${pts}" fill="none" stroke="${farbe}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s += v.map((w, i) => `<circle class="p" cx="${x(off + i)}" cy="${y(w)}" r="4" fill="${farbe}" stroke="var(--panel)" stroke-width="2"><title>${art}: ${fmt(w)} s</title></circle>`).join('');
+  }
+  if (!reihen.some(([a]) => sp[a].verlauf.length)) s += `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">Noch keine Spiele erfasst</text>`;
+  $('ch_verlauf').innerHTML = s;
+}
+function chartGruppen(id, gruppen, reihen, einheit) {     // gruppierte Säulen
+  const W = 440, H = 190, L = 40, R = 10, T = 14, B = 26;
+  const max = achsenMax(Math.max(0.5, ...gruppen.flatMap(g => g.werte)));
+  let s = yGitter(W, H, L, R, T, B, max, einheit);
+  const gw = (W - L - R) / gruppen.length, bw = Math.min(24, gw / (reihen.length + 1.5));
+  gruppen.forEach((g, gi) => {
+    const mitte = L + gw * (gi + .5), start = mitte - (reihen.length * bw + (reihen.length - 1) * 2) / 2;
+    g.werte.forEach((v, ri) => {
+      const hgt = (H - T - B) * (v / max), x = start + ri * (bw + 2), y = H - B - hgt;
+      s += `<path class="balken" d="${balkenPfad(x, y, bw, hgt)}" fill="${reihen[ri][1]}"><title>${g.name} · ${reihen[ri][0]}: ${fmt(v)} ${einheit}</title></path>`;
+      if (v > 0) s += `<text class="wert-text" x="${x + bw / 2}" y="${y - 4}" text-anchor="middle">${fmt(v, Number.isInteger(v) ? 0 : 1)}</text>`;
+    });
+    s += `<text x="${mitte}" y="${H - 8}" text-anchor="middle">${g.name}</text>`;
+  });
+  $(id).innerHTML = s;
+}
+function kennzahlenZeigen() {
+  if (!K) return;
+  const sp = K.spiele, d = K.durchsatz, f = K.fuellgrad;
+  $('kpi_gross').innerHTML =
+    kpiKachel('Durchsatz letzte Stunde', d.letzte_stunde, 'Spiele/h', `${d.letzte_stunde_ein} Ein- · ${d.letzte_stunde_aus} Auslagerungen`) +
+    kpiKachel('Ø Durchsatz', fmt(d.mittel_pro_h), 'Spiele/h', `über ${fmt(K.betriebszeit_h, 2)} h Betriebszeit`) +
+    kpiKachel('Auslastung RBG', fmt(K.auslastung_prozent), '%', '', K.auslastung_prozent || 0) +
+    kpiKachel('Füllgrad', f.prozent, '%', '', f.prozent) +
+    kpiKachel('Umlagerungen', K.umlagerungen, 'Züge', 'automatisch + manuell') +
+    kpiKachel('Bestellungen', K.bestellungen_gesamt, '', `ABC-Fenster: letzte ${K.abc.fenster}`);
+  const zeile = (art, farbe) => { const n = sp[art].netto, b = sp[art].brutto, l = sp[art].letzte;
+    return `<tr><td><i class="wp" style="background:${farbe};border-color:transparent;border-radius:2px"></i> ${art}</td><td class="zahl mono">${n.anzahl}</td>
+      <td class="zahl mono"><b>${fmt(n.mittel)}</b> s</td><td class="zahl mono">${fmt(n.min)}</td><td class="zahl mono">${fmt(n.max)}</td>
+      <td class="zahl mono">${fmt(b.mittel)} s</td><td class="zahl mono">${l ? fmt(l.netto) + ' s' : '–'}</td></tr>`; };
+  $('spiel_tabelle').innerHTML = zeile('Einlagerung', 'var(--s1)') + zeile('Auslagerung', 'var(--s2)') + zeile('Umlagerung', 'var(--s3)');
+  chartVerlauf();
+
+  const w = K.wartezeiten, wv = (a, wer) => w[`${a}|${wer}`].mittel || 0;
+  chartGruppen('ch_warte', [{ name: 'Einlagerung', werte: [wv('Einlagerung', 'Greifer'), wv('Einlagerung', 'HRL')] },
+                            { name: 'Auslagerung', werte: [wv('Auslagerung', 'Greifer'), wv('Auslagerung', 'HRL')] }],
+               [['Greifer wartet', 'var(--s1)'], ['HRL wartet', 'var(--s2)']], 's');
+  $('warte_tabelle').innerHTML = ['Einlagerung', 'Auslagerung'].flatMap(a => ['Greifer', 'HRL'].map(wer => {
+    const x = w[`${a}|${wer}`];
+    return `<tr><td>${a}</td><td>${wer === 'Greifer' ? 'Greifer auf HRL' : 'HRL auf Greifer'}</td><td class="zahl mono">${fmt(x.mittel)}</td>
+      <td class="zahl mono">${fmt(x.max)}</td><td class="zahl mono">${fmt(x.summe)}</td></tr>`; })).join('');
+
+  chartGruppen('ch_durchsatz', d.stunden.map(x => ({ name: x.bis, werte: [x.ein, x.aus] })),
+               [['Einlagerungen', 'var(--s1)'], ['Auslagerungen', 'var(--s2)']], '');
+  const dl = K.durchlauf;
+  $('durchlauf_info').innerHTML = `Durchlaufzeit Auftrag (Start → eingelagert bzw. in der Ausgabe): Einlagerung Ø <b>${fmt(dl.Einlagerung.mittel)} s</b> (${dl.Einlagerung.anzahl}) · Auslagerung Ø <b>${fmt(dl.Auslagerung.mittel)} s</b> (${dl.Auslagerung.anzahl})`;
+
+  // Heatmap Zugriffe (sequentiell, eine Farbe)
+  const z = K.zugriffe, zmax = Math.max(1, ...Object.values(z));
+  const stufe = v => v === 0 ? ['var(--feld)', 'var(--muted)'] : v / zmax < .25 ? ['var(--seq1)', 'var(--ink)'] : v / zmax < .5 ? ['var(--seq2)', 'var(--ink)']
+    : v / zmax < .75 ? ['var(--seq3)', '#fff'] : ['var(--seq4)', '#fff'];
+  let hm = '<div class="kopfz"></div>' + [1, 2, 3].map(i => `<div class="kopfz">Spalte ${i}</div>`).join('');
+  for (const r of 'ABC') {
+    hm += `<div class="kopfz">${r}</div>`;
+    for (const c of [1, 2, 3]) { const p = r + c, [bg, fg] = stufe(z[p]);
+      hm += `<div style="background:${bg};color:${fg};border:1px solid var(--line2)" title="${p}: ${z[p]} Zugriffe · Zone ${K.abc.zone_je_platz[p]}">${z[p]}<small>${p} · ${K.abc.zone_je_platz[p]}</small></div>`; }
+  }
+  $('heat').innerHTML = hm;
+
+  // Füllgrad
+  const je = f.je_farbe, ges = f.plaetze;
+  const seg = (n, bg, t) => n ? `<div style="flex:${n};background:${bg};box-shadow:inset 0 0 0 1px var(--line)" title="${t}: ${n}"></div>` : '';
+  $('fuellgrad').innerHTML = `<div class="kpi" style="border:0;padding:0;background:none"><div class="kz">${f.prozent}<small>% belegt</small></div></div>
+    <div class="fgbar" style="margin:8px 0">${seg(je.WHITE, 'var(--wp-white)', 'Weiß')}${seg(je.RED, 'var(--wp-red)', 'Rot')}${seg(je.BLUE, 'var(--wp-blue)', 'Blau')}${seg(f.leer, 'var(--behaelter-fill)', 'leer')}${seg(f.frei, 'var(--line2)', 'frei')}</div>
+    <table>${['WHITE', 'RED', 'BLUE'].map(c => `<tr><td>${wpDot(c)} ${FARBNAME[c]}</td><td class="zahl mono">${je[c]} / ${S ? S.hbw.max_je_farbe : 3}</td></tr>`).join('')}
+    <tr><td>${wpDot('LEER')} leere Behälter</td><td class="zahl mono">${f.leer}</td></tr><tr><td>${wpDot('FREI')} freie Plätze</td><td class="zahl mono">${f.frei}</td></tr>
+    <tr><td>Förderstrecke</td><td class="zahl">${INHALT(f.band)}</td></tr></table>`;
+  $('kpi_basis').textContent = `Erfassung seit ${K.seit} · Betriebszeit ${fmt(K.betriebszeit_h, 2)} h · ${d.gesamt} Ein-/Auslagerungen · Rohdaten: daten/kennzahlen.json · Spiele für Excel: daten/spiele.csv`;
+}
+async function kennzahlenLaden() {
+  try { const r = await fetch('/api/kennzahlen'); K = await r.json(); kennzahlenZeigen(); kpiLeiste(); } catch (e) {}
 }
 
 async function aktualisieren() {
   try { const r = await fetch('/api/status'); render(await r.json()); }
-  catch (e) { $('hbw_hinweis').textContent = 'Keine Verbindung zum Python-Programm – läuft start.py noch?'; $('hbw_hinweis').className = 'hinweis fehler'; }
+  catch (e) { $('alarme').innerHTML = '<div class="alarm err"><span class="sym">!</span><div class="txt"><b>Keine Verbindung</b> zum Python-Programm – läuft start.py noch?</div></div>'; }
 }
-aktualisieren(); setInterval(aktualisieren, 300);
+aktualisieren(); kennzahlenLaden();
+setInterval(aktualisieren, 400);
+setInterval(kennzahlenLaden, 3000);
 </script>
 </body>
 </html>

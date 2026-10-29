@@ -37,6 +37,7 @@ class Station:
         self.bei_status = []     # f(code, aktiv)
         self.bei_quittung = []   # f(code, werkstueck)
         self.sperre = None       # optional: f() -> Text, wenn Dashboard-Befehle gesperrt sind
+        self.bei_fehler = []     # f(station, text) – z. B. Auftragsverwaltung bricht Auftrag ab
 
         self.protokoll = collections.deque(maxlen=200)
         self._laeuft = False
@@ -173,6 +174,11 @@ class Station:
             self._eintritt()
         except Exception as e:
             self.log(f"Fehler beim Eintritt in FAULT: {e!r}")
+        for f in list(self.bei_fehler):
+            try:
+                f(self, text)
+            except Exception as e:
+                self.log(f"Fehler-Beobachter-Fehler: {e!r}")
 
     def _wechsel(self, z):
         self._neuer_zustand = z

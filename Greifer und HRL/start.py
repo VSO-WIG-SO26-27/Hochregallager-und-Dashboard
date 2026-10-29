@@ -29,6 +29,7 @@ import webbrowser
 
 from code import konfiguration as cfg
 from code.dashboard import erstelle_server
+from code.auftraege import Auftragsverwaltung
 from code.greifer import Sauggreifer
 from code.hardware import HardwareFehler, SimHardware, TxtHardware
 from code.steuerung import Hochregallager
@@ -80,8 +81,11 @@ def main():
     hardware = [h for h in (hw_hbw, hw_vgr) if h]
 
     stationen = {"hbw": Hochregallager(hw_hbw)}
+    lvs = None
     if hw_vgr:
         stationen["vgr"] = Sauggreifer(hw_vgr, stationen["hbw"])
+        lvs = Auftragsverwaltung(stationen["hbw"], stationen["vgr"])   # Warteschlange
+        stationen["vgr"].verbinde_lvs(lvs)
 
     mqtt = None
     if args.mqtt:
@@ -91,13 +95,13 @@ def main():
         except RuntimeError as e:
             print(f"MQTT nicht verfügbar: {e}")
 
-    server = erstelle_server(stationen, args.port, mqtt)
+    server = erstelle_server(stationen, args.port, mqtt, lvs)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{args.port}"
     print(f"Dashboard: {url}")
 
     for s in stationen.values():
-        s.start()   # Zustandsautomat: INIT -> Referenzfahrt -> IDLE
+        s.start()   # Zustandsautomat: INIT -> Referenzfahrt (einzige 0/0-Fahrt) -> IDLE
     if not args.kein_browser:
         webbrowser.open(url)
 

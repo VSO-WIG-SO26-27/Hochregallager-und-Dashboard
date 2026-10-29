@@ -64,10 +64,30 @@ ZYKLUS_S = 0.01                # TxtAxis.h: CYCLE_MS_AXIS = 10 ms
 
 # Hub beim Aufnehmen/Absetzen eines Behälters (TxtHighBayWarehouse.h: ydelta = 40)
 Y_DELTA = 40
+# Anheben beim AUFNEHMEN (Regal und Band). Etwas mehr als Y_DELTA, damit der Behälter
+# auch bei kleiner Positionsabweichung sicher frei kommt. Bei Bedarf an der Anlage anpassen.
+Y_HUB_AUFNEHMEN = 60
+
+# Nachreferenzieren: Ohne Referenzfahrt nach jedem Auftrag summieren sich kleine Zählfehler
+# der Encoder. Deshalb fährt das RBG nach so vielen Transporten in einer Pause (kein Auftrag,
+# Greifer in Ruhe) einmal auf 0/0 und danach zurück an seine letzte Position.
+NACHREFERENZ_NACH_TRANSPORTEN = 4
+NACHREFERENZ_RUHE_S = 2.0       # so lange muss Ruhe herrschen
+NACHREFERENZ_SPAETESTENS = 10   # spätestens dann auch ohne Pause (vor dem nächsten Auftrag)
 
 # Laufzeiten Förderband (TxtConveyorBelt.cpp: moveIn 1000 ms, moveOut 1200 ms)
 BAND_REIN_S = 1.0
 BAND_RAUS_S = 1.2
+
+# ---------------------------------------------------------------------------
+# Lagerlogik und Auftragssteuerung (Erweiterung gegenüber dem Original)
+# Die Laufzeit-Einstellungen (ABC, Umlagern, Vorrang) stehen in
+# daten/einstellungen.json und lassen sich im Dashboard ändern.
+# ---------------------------------------------------------------------------
+MAX_JE_FARBE = 3               # C++: canColorBeStored – max. 3 Werkstücke je Farbe
+AUFTRAEGE_MAX = 5              # so viele offene Aufträge nimmt die Warteschlange an
+UMLAGERN_MAX_ZUEGE = 4         # max. Behälterbewegungen je Umlagerplan (Suchtiefe)
+UMLAGERN_PLANUNG_S = 3.0       # im Stillstand höchstens so oft neu planen
 
 # ---------------------------------------------------------------------------
 # Standard-Kalibrierung (TxtHighBayWarehouseCalibData::saveDefault)

@@ -1,0 +1,8 @@
+{
+ "auto_annahme": true,
+ "auto_umlagern": true,
+ "umlagern_nach_s": 20,
+ "vorrang": "EIN",
+ "abc_fenster": 20,
+ "abc_min_bestellungen": 3
+}

@@ -1,12 +1,12 @@
 {
  "Storage": {
   "A1": null,
-  "A2": {
-   "tag_uid": "",
+  "A2": null,
+  "A3": {
+   "tag_uid": "9376B90BAD7849",
    "state": 0,
    "type": 2
   },
-  "A3": null,
   "B1": null,
   "B2": null,
   "B3": null,

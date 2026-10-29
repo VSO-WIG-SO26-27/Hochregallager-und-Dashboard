@@ -15,6 +15,12 @@ Abweichungen vom Original (mit dem Team abgestimmt):
     geschrieben wird aber nichts; jedes Werkstück bekommt eine erzeugte ID
   * Auslagern: das Werkstück geht direkt vom Hochregallager in die Ausgabe
     (im Original fährt es vorher über Bearbeitungsstation und Sortierstrecke)
+  * Aufträge kommen aus der Warteschlange (auftraege.py): Der Greifer holt sich
+    im Zustand IDLE den nächsten ausführbaren Auftrag (Ein- oder Auslagerung)
+  * Nach dem Herausnehmen meldet er "entnommen" – der leere Behälter bleibt am Band
+  * Lagerkapazität: Ist eine Farbe schon 3x eingelagert, wird das Werkstück ausgeschleust
+  * Wartezeiten an der Übergabe (Greifer wartet auf HRL / HRL wartet auf Greifer)
+    werden für die Kennzahlen gemessen
 """
 
 import time
@@ -49,7 +55,7 @@ ABLAUF_ZUSTAENDE = {"START_DELIVERY", "COLOR_DETECTION", "NFC_RAW", "NFC_REJECTE
 class Sauggreifer(Station):
     kuerzel = "VGR"
     ERLAUBT = {
-        "IDLE": {"bestellen", "annehmen", "kalibrieren", "farbkalibrieren", "referenzfahrt", "hand"},
+        "IDLE": {"annehmen", "kalibrieren", "farbkalibrieren", "referenzfahrt", "hand"},
         "FAULT": {"quittieren"},
         "CALIB_VGR_MOVE": {"kalib_waehle", "kalib_jog", "kalib_speichern", "kalib_ende"},
         "CALIB_DPS_NEXT": {"farbe_messen", "farbkalib_speichern", "farbkalib_ende"},
@@ -66,7 +72,13 @@ class Sauggreifer(Station):
         self.werkstueck = None          # C++: reqWP_HBW
         self.bestellung = {"type": "NONE", "state": "WAITING_FOR_ORDER"}   # C++: ord_state
         self.letzter_farbwert = None
-        self.auto_annahme = True        # Werkstück in der Eingabe automatisch annehmen (wie Original)
+        self._auto_annahme = True       # nur ohne HBW – sonst aus den gemeinsamen Einstellungen
+        self.lvs = None                 # Auftragsverwaltung (Warteschlange)
+        self.auftrag = None             # Auftrag, den der Greifer gerade ausführt
+        self._t_an = None               # Greifer an der Übergabe angekommen
+        self._t_ack = None              # HBW hat "Behälter am Band" gemeldet
+        self._ausschleus_grund = ""
+        self._bereitstellung = False    # Leerbehälter für die laufende Einlagerung angefordert
         self.kalib_punkt = None
         self.farb_messungen = {}
         self.hinweis = ""
@@ -75,7 +87,15 @@ class Sauggreifer(Station):
         if hbw is not None:
             self.verbinde(hbw)
 
+    @property
+    def auto_annahme(self):
+        """Werkstück in der Eingabe automatisch annehmen (wie Original)."""
+        return self.hbw.einst["auto_annahme"] if self.hbw is not None else self._auto_annahme
+
     # --- Kopplung mit dem Hochregallager -----------------------------------
+    def verbinde_lvs(self, lvs):
+        self.lvs = lvs
+
     def verbinde(self, hbw):
         """Ersetzt die MQTT-Verbindung des Originals: Quittungen des HBW
         (fl/hbw/ack) kommen hier direkt an, Aufträge gehen direkt ans HBW."""
@@ -86,7 +106,18 @@ class Sauggreifer(Station):
 
     def _hbw_quittung(self, code, wp):
         if code == ACK_FETCHED:
+            self._t_ack = time.time()
             self.anfordern("hbw_fetched", quelle="hbw", werkstueck=wp)
+
+    def _wartezeit_erfassen(self, art):
+        """An der Übergabe: wer war zuerst da? Die Differenz ist die Wartezeit des anderen."""
+        jetzt = time.time()
+        t_ack = self._t_ack or jetzt
+        t_an = self._t_an or t_ack
+        kpi = self.hbw.kpi
+        kpi.wartezeit(art, "Greifer", max(0.0, t_ack - t_an))   # Greifer stand da, HRL noch nicht fertig
+        kpi.wartezeit(art, "HRL", max(0.0, t_an - t_ack))       # Behälter stand da, Greifer noch unterwegs
+        self._t_an = self._t_ack = None
 
     def _an_hbw(self, befehl, wp=None):
         """C++: mqttclient->publishVGR_Do(...)"""
@@ -104,6 +135,8 @@ class Sauggreifer(Station):
             return "Kein Hochregallager verbunden"
         if self.hbw.zustand != "IDLE" or self.hbw.aktiv:
             return f"Hochregallager ist nicht bereit (Zustand {self.hbw.zustand})"
+        if self.hbw.lager.klaerfall:
+            return "Klärfall im Hochregallager – Belegung prüfen und bestätigen"
         if aufgabe == "einlagern" and not self.hbw.hat_leeren_behaelter():
             return "Kein leerer Behälter im Hochregallager"
         if aufgabe == "auslagern" and not self.hbw.hat_farbe(typ):
@@ -260,9 +293,16 @@ class Sauggreifer(Station):
     def anfordern(self, befehl, quelle="dashboard", **daten):
         # Einstellungen und Simulationsknöpfe gehen in jedem Zustand
         if befehl == "auto_annahme":
-            self.auto_annahme = bool(daten.get("an"))
+            if self.hbw is not None:
+                self.hbw.einst.setze("auto_annahme", bool(daten.get("an")))
+            else:
+                self._auto_annahme = bool(daten.get("an"))
             self.log(f"Automatische Annahme an der Eingabe: {'an' if self.auto_annahme else 'aus'}")
             return True, "Einstellung übernommen"
+        if befehl == "bestellen":           # alter Weg – Bestellungen gehen in die Warteschlange
+            if self.lvs is None:
+                return False, "Keine Auftragsverwaltung aktiv"
+            return self.lvs.anfordern("bestellen", quelle, **daten)
         if befehl == "sim_einlegen":
             if not hasattr(self.hw, "sim_werkstueck_einlegen"):
                 return False, "Nur in der Simulation"
@@ -276,19 +316,9 @@ class Sauggreifer(Station):
         return super().anfordern(befehl, quelle, **daten)
 
     def _pruefe_dashboard(self, befehl, daten):
-        if befehl == "bestellen":
-            typ = daten.get("farbe")
-            if typ not in ("WHITE", "RED", "BLUE"):
-                return False, "Bitte Farbe wählen"
-            grund = self.hbw_bereit_fuer("auslagern", typ)
-            if grund:
-                return False, grund
         if befehl == "annehmen":
             if not self.eingabe_belegt():
                 return False, "Es liegt kein Werkstück in der Eingabe"
-            grund = self.hbw_bereit_fuer("einlagern")
-            if grund:
-                return False, grund
         if befehl == "kalib_waehle" and daten.get("punkt") not in KALIB_PUNKTE:
             return False, "Unbekannter Kalibrierpunkt"
         if befehl == "kalib_speichern" and not self.kalib_punkt:
@@ -303,6 +333,8 @@ class Sauggreifer(Station):
     def _bei_eintritt(self, zustand):
         if zustand == "FAULT":
             self.loslassen()                 # wie Original: release()
+            self._bereitstellung_abbrechen()
+            self.auftrag = None              # die Auftragsverwaltung bricht ihn ab (bei_fehler)
         elif zustand == "IDLE":
             self.loslassen()
             self.set_geschwindigkeit(cfg.GESCHWINDIGKEIT)
@@ -329,6 +361,12 @@ class Sauggreifer(Station):
         # --- Einlagern: Eingabe -> Farbsensor -> Hochregallager ------------
         elif z == "START_DELIVERY":
             self.hinweis = "Werkstück wird aus der Eingabe geholt"
+            self._phase("GREIFER")
+            # Leerbehälter SOFORT anfordern: Das HRL stellt ihn bereit, während der
+            # Greifer das Werkstück holt und die Farbe prüft (Farbe ist hier noch unbekannt)
+            self._pruefe_hbw_fehler()
+            self._an_hbw("behaelter_holen", {"id": "", "type": "NONE", "state": "RAW"})
+            self._bereitstellung = True
             self.eingabe_greifen()
             self.zum_nfc()                    # NFC-Position wie im Original (ohne Lesen)
             self.werkstueck = {"id": uuid.uuid4().hex[:14].upper(), "type": "NONE", "state": "RAW"}
@@ -338,10 +376,19 @@ class Sauggreifer(Station):
             self.zum_farbsensor()
             mv, farbe = self.farbe_messen()
             self.log(f"Farbsensor: {mv} mV -> {farbe}")
-            if farbe != "NONE":
+            self._ausschleus_grund = ""
+            if farbe != "NONE" and self.hbw is not None and not self.hbw.lager.farbe_einlagerbar(farbe):
+                self._ausschleus_grund = (f"Lagerkapazität für {farbe} erreicht "
+                                          f"(max. {cfg.MAX_JE_FARBE}) – Werkstück wird ausgeschleust")
+                self.log(self._ausschleus_grund)
+                self._phase("GREIFER", farbe)
+                self._wechsel("NFC_REJECTED")
+            elif farbe != "NONE":
                 self.werkstueck["type"] = farbe
+                self._phase("GREIFER", farbe)
                 self._wechsel("NFC_RAW")
             else:
+                self._ausschleus_grund = "Farbe nicht erkannt – Werkstück wird ausgeschleust"
                 self._wechsel("NFC_REJECTED")
 
         elif z == "NFC_RAW":
@@ -353,25 +400,35 @@ class Sauggreifer(Station):
             self._wechsel("WRONG_COLOR")
 
         elif z == "WRONG_COLOR":
-            self.hinweis = "Farbe nicht erkannt – Werkstück wird abgelegt"
-            self.log("Farbe nicht erkannt – Ablage für falsche Werkstücke")
+            self.hinweis = self._ausschleus_grund or "Farbe nicht erkannt – Werkstück wird abgelegt"
+            self.log(self.hinweis + " (Ablage für falsche Werkstücke)")
             self.falsch_ablegen()
+            self._bereitstellung_abbrechen()
+            self._auftrag_ende("AUSGESCHLEUST", self.hinweis)
             self._wechsel("IDLE")
 
         elif z == "STORE_WP_VGR":
             self._pruefe_hbw_fehler()
-            self._an_hbw("behaelter_holen", self.werkstueck)
+            if not self._bereitstellung:          # Fallback: noch nicht angefordert
+                self._t_ack = None
+                self._an_hbw("behaelter_holen", self.werkstueck)
+                self._bereitstellung = True
             self.hinweis = f"Bringe Werkstück {self.werkstueck['type']} zum Hochregallager"
             self.zum_hbw()
+            self._t_an = time.time()
             self._wechsel("STORE_WP")
 
         elif z == "STORE_WP":
             self.hinweis = "Warte, bis das Hochregallager den leeren Behälter bereitgestellt hat"
             self._pruefe_hbw_fehler()
             if self._hole("hbw_fetched") is not None:
+                self._wartezeit_erfassen("Einlagerung")
+                self._bereitstellung = False
                 self.loslassen()
+                self._phase("UEBERGEBEN")
                 self._an_hbw("einlagern", self.werkstueck)
                 self.log(f"Werkstück {self.werkstueck['type']} an Hochregallager übergeben")
+                self.auftrag = None          # Rest erledigt das HBW (Auftrag endet mit dessen Quittung)
                 self.referenzfahrt()
                 self._wechsel("IDLE")
 
@@ -379,18 +436,25 @@ class Sauggreifer(Station):
         elif z == "FETCH_WP_VGR":
             self._pruefe_hbw_fehler()
             wp = {"id": "", "type": self.bestellung["type"], "state": "RAW"}
+            self._t_ack = self._t_an = None
+            self._phase("ANGEFORDERT")
             self._an_hbw("auslagern", wp)
             self.hinweis = f"Hochregallager lagert {wp['type']} aus"
             self.zum_hbw()
+            self._t_an = time.time()
             self._wechsel("VGR_WAIT_FETCHED")
 
         elif z == "VGR_WAIT_FETCHED":
+            self.hinweis = "Warte, bis das Hochregallager das Werkstück bereitgestellt hat"
             self._pruefe_hbw_fehler()
             f = self._hole("hbw_fetched")
             if f is not None:
+                self._wartezeit_erfassen("Auslagerung")
                 self.werkstueck = f.get("werkstueck") or {"id": "", "type": self.bestellung["type"], "state": "RAW"}
+                self.hinweis = "Werkstück wird aus dem Behälter genommen"
                 self.von_hbw_greifen()
-                self._an_hbw("behaelter_zurueck", self.werkstueck)
+                self._an_hbw("entnommen", self.werkstueck)    # leerer Behälter bleibt am Band
+                self._phase("ENTNOMMEN")
                 self.bestellung["state"] = "IN_PROCESS"
                 # Original: weiter zur Bearbeitungsstation (MOVE_VGR2MPO) – hier direkt zur Ausgabe
                 self._wechsel("MOVE_PICKUP_WAIT")
@@ -401,6 +465,7 @@ class Sauggreifer(Station):
                 self.ausgabe_ablegen()
                 self.bestellung["state"] = "SHIPPED"
                 self.log(f"Bestellung {self.bestellung['type']} ausgeliefert")
+                self._auftrag_ende("FERTIG")
                 time.sleep(2)
                 self._wechsel("MOVE_PICKUP")
             elif not self.hinweis.startswith("Ausgabe belegt"):
@@ -441,13 +506,24 @@ class Sauggreifer(Station):
             from .achsen import AchsenFehler
             raise AchsenFehler("Hochregallager meldet einen Fehler – Übergabe abgebrochen")
 
+    def _bereitstellung_abbrechen(self):
+        """Einlagerung endet ohne Übergabe: HRL nicht weiter auf das Werkstück warten lassen.
+        Der leere Behälter bleibt am Band und wird für die nächste Einlagerung benutzt."""
+        if self._bereitstellung and self.hbw is not None:
+            self.hbw.anfordern("abbrechen", quelle="vgr")
+            self.log("-> HBW: abbrechen (Leerbehälter bleibt am Band)")
+        self._bereitstellung = False
+
+    def _phase(self, phase, farbe=None):
+        if self.lvs is not None and self.auftrag is not None:
+            self.lvs.phase(self.auftrag, phase, farbe)
+
+    def _auftrag_ende(self, status, text=""):
+        if self.lvs is not None and self.auftrag is not None:
+            self.lvs.abschliessen(self.auftrag, status, text)
+        self.auftrag = None
+
     def _idle_schritt(self):
-        b = self._hole("bestellen")
-        if b is not None:
-            self.bestellung = {"type": b["farbe"], "state": "ORDERED"}
-            self.log(f"Bestellung: {b['farbe']}")
-            self._wechsel("FETCH_WP_VGR")
-            return
         if self._hole("kalibrieren") is not None:
             self._wechsel("CALIB_VGR")
             return
@@ -462,25 +538,49 @@ class Sauggreifer(Station):
             self._handbetrieb(hand)
             return
 
-        # Werkstück in der Eingabe? (C++: else if (!dps.is_DIN()) -> START_DELIVERY)
+        # Werkstück in der Eingabe? -> Einlagerauftrag in der Warteschlange anmelden
+        # (C++: else if (!dps.is_DIN()) -> START_DELIVERY)
         manuell = self._hole("annehmen") is not None
-        if self.eingabe_belegt():
+        belegt = self.eingabe_belegt()
+        if belegt:
             if self._eingabe_seit is None:
                 self._eingabe_seit = time.time()
             stabil = time.time() - self._eingabe_seit >= cfg.DPS_ENTPRELLZEIT_S
-            if manuell or (self.auto_annahme and stabil):
-                grund = self.hbw_bereit_fuer("einlagern")
-                if grund:
-                    if self.hinweis != grund:
-                        self.hinweis = grund
-                        self.log(f"Werkstück in der Eingabe wartet: {grund}")
-                else:
-                    self.log("Werkstück in der Eingabe erkannt – Einlagerung startet")
-                    self._wechsel("START_DELIVERY")
+            if self.lvs is not None and (manuell or (self.auto_annahme and stabil)):
+                self.lvs.einlagerung_anmelden("Eingabe" if not manuell else "Bediener")
         else:
             self._eingabe_seit = None
-            if self.hinweis and not self.hinweis.startswith("Farbe"):
-                self.hinweis = ""
+            if self.lvs is not None:
+                self.lvs.einlagerung_abmelden()
+
+        # Disposition: nächsten Auftrag aus der Warteschlange holen
+        if self.lvs is None:
+            return
+        grund = self.hbw_bereit_fuer("")
+        if grund:
+            if self.lvs.offen and self.hinweis != grund:
+                self.hinweis = grund
+            return
+        a = self.lvs.naechster()
+        if a is None:
+            wartend = [x for x in self.lvs.offen if x["status"] == "WARTEND"]
+            self.hinweis = f"Auftrag {wartend[0]['nr']} {wartend[0]['text']}" if wartend and wartend[0]["text"] else ""
+            return
+        if a["art"] == "EIN" and not belegt:
+            self.lvs.einlagerung_abmelden()
+            return
+        self.auftrag = a
+        self._hole("hbw_fetched")                 # alte Quittungen verwerfen
+        self._t_ack = self._t_an = None
+        self._bereitstellung = False
+        self.lvs.starten(a)
+        if a["art"] == "EIN":
+            self.log(f"Auftrag {a['nr']}: Einlagerung startet")
+            self._wechsel("START_DELIVERY")
+        else:
+            self.bestellung = {"type": a["farbe"], "state": "ORDERED"}
+            self.log(f"Auftrag {a['nr']}: Auslagerung {a['farbe']} startet")
+            self._wechsel("FETCH_WP_VGR")
 
     def _kalibrier_schritt(self):
         if self._hole("kalib_ende") is not None:
@@ -578,6 +678,7 @@ class Sauggreifer(Station):
             "gegriffen": self.gegriffen,
             "werkstueck": self.werkstueck,
             "bestellung": self.bestellung,
+            "auftrag": None if self.auftrag is None else {k: self.auftrag[k] for k in ("nr", "art", "farbe", "phase")},
             "auto_annahme": self.auto_annahme,
             "hinweis": self.hinweis,
             "kalib_punkt": self.kalib_punkt,

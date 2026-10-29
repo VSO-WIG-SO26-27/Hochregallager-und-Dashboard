@@ -1,20 +1,24 @@
 """
 Kleiner Webserver für das Dashboard (nur Python-Standardbibliothek).
 
-  GET  /             -> dashboard.html
-  GET  /api/status   -> Zustand aller Stationen als JSON
-  POST /api/befehl   -> {"station": "hbw"|"vgr"|"alle", "befehl": "...", ...}
+  GET  /                -> dashboard.html
+  GET  /api/status      -> Zustand aller Stationen + Warteschlange als JSON
+  GET  /api/kennzahlen  -> Kennzahlen (Spielzeiten, Wartezeiten, Durchsatz, ...)
+  POST /api/befehl      -> {"station": "hbw"|"vgr"|"lvs"|"alle", "befehl": "...", ...}
 """
 
 import json
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HTML_DATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 
 
-def erstelle_server(stationen, port, mqtt=None):
-    """stationen: dict, z. B. {"hbw": Hochregallager, "vgr": Sauggreifer}"""
+def erstelle_server(stationen, port, mqtt=None, lvs=None):
+    """stationen: dict, z. B. {"hbw": Hochregallager, "vgr": Sauggreifer}
+    lvs: Auftragsverwaltung (Warteschlange), falls der Greifer läuft"""
+    hbw = stationen["hbw"]
 
     class Handler(BaseHTTPRequestHandler):
         def _antwort(self, code, daten, typ="application/json; charset=utf-8"):
@@ -32,8 +36,14 @@ def erstelle_server(stationen, port, mqtt=None):
                     self._antwort(200, f.read(), "text/html; charset=utf-8")
             elif self.path == "/api/status":
                 bericht = {name: s.zustandsbericht() for name, s in stationen.items()}
+                bericht["lvs"] = None if lvs is None else lvs.zustandsbericht()
                 bericht["mqtt"] = None if mqtt is None else mqtt.verbunden
+                bericht["zeit"] = time.strftime("%H:%M:%S")
                 self._antwort(200, bericht)
+            elif self.path == "/api/kennzahlen":
+                b = hbw.kpi.bericht(hbw.lager)
+                b["abc"] = hbw.strategie.bericht(hbw.lager.snapshot())
+                self._antwort(200, b)
             else:
                 self._antwort(404, {"fehler": "nicht gefunden"})
 
@@ -53,6 +63,8 @@ def erstelle_server(stationen, port, mqtt=None):
                 ergebnisse = [s.anfordern(befehl, quelle="dashboard", **dict(daten)) for s in stationen.values()]
                 ok = all(e[0] for e in ergebnisse)
                 meldung = " · ".join(e[1] for e in ergebnisse)
+            elif station == "lvs" and lvs is not None:
+                ok, meldung = lvs.anfordern(befehl, quelle="dashboard", **daten)
             elif station in stationen:
                 ok, meldung = stationen[station].anfordern(befehl, quelle="dashboard", **daten)
             else:

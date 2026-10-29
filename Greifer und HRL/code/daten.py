@@ -1,12 +1,13 @@
 """
-Lagerverwaltung und Kalibrierdaten.
+Lagerverwaltung (LVS), Einstellungen und Kalibrierdaten.
 
-  TxtHighBayWarehouseStorage.cpp    ->  Lager
+  TxtHighBayWarehouseStorage.cpp    ->  Lager (erweitert: 3 Platzzustände, Förderband,
+                                        Reservierung/Buchung, Klärfall)
   TxtHighBayWarehouseCalibData.cpp  ->  Kalibrierung
 
-Beide Dateien werden im selben JSON-Format gespeichert wie auf dem Original-TXT
-(Data/Config.HBW.Storage.json und Data/Calib.HBW.json). Man kann die Dateien
-vom TXT also direkt in den Ordner daten/ kopieren und weiterverwenden.
+Lager- und Kalibrierdatei sind mit dem Original-TXT kompatibel
+(Data/Config.HBW.Storage.json und Data/Calib.HBW.json): Der Teil "Storage"
+hat das Originalformat, zusätzliche Angaben stehen in eigenen Schlüsseln.
 """
 
 import json
@@ -31,18 +32,64 @@ def platz_koordinaten(name):
     return int(name[1]) - 1, "ABC".index(name[0].upper())
 
 
+PLAETZE = [platz_name(x, y) for y in range(3) for x in range(3)]     # A1, A2, A3, B1, ... C3
+BAND = "BAND"                                                        # Übergabeplatz am Förderband
+
+# Platzzustände (wie in einem Lagerverwaltungssystem)
+BELEGT = "BELEGT"     # Behälter mit Werkstück
+LEER = "LEER"         # leerer Behälter
+FREI = "FREI"         # kein Behälter auf dem Platz (Behälter unterwegs bzw. am Band)
+
+FARBEN = ("WHITE", "RED", "BLUE")
+
+
+def _wp_aus_datei(w):
+    return None if w is None else {
+        "id": str(w.get("tag_uid", "")),
+        "type": TYPEN[int(w.get("type", 0))],
+        "state": ZUSTAENDE[int(w.get("state", 0))],
+    }
+
+
+def _wp_in_datei(w):
+    return None if w is None else {
+        "tag_uid": w.get("id", ""),
+        "state": ZUSTAENDE.index(w.get("state", "RAW")),
+        "type": TYPEN.index(w.get("type", "NONE")),
+    }
+
+
+class LagerFehler(Exception):
+    """Buchung nicht möglich (z. B. Zielplatz nicht frei)."""
+
+
 # ===========================================================================
 class Lager:
-    """Belegung der 3x3 Regalplätze. Jeder Platz enthält immer einen Behälter;
-    gespeichert wird, ob und welches Werkstück darin liegt (None = leerer Behälter)."""
+    """Lagerverwaltung (LVS) für 3x3 Regalplätze plus den Übergabeplatz am Förderband.
+
+    Jeder Regalplatz hat einen von drei Zuständen:
+      BELEGT  Behälter mit Werkstück
+      LEER    leerer Behälter
+      FREI    kein Behälter – er ist gerade unterwegs oder steht am Förderband
+
+    Bewegungen laufen immer in zwei Schritten (wie in einem echten LVS):
+      1. beginne()      Transport anlegen, Quelle und Ziel RESERVIEREN, Datei speichern
+      2. abschliessen() Fahrt ist quittiert -> endgültige BUCHUNG, Reservierung löschen
+    Bricht eine Fahrt ab (Fehler, Not-Halt, Programmende), bleibt der Transport
+    stehen. Beim nächsten Start bzw. nach dem Fehler entsteht daraus ein KLÄRFALL:
+    Die Belegung muss am Regal geprüft und im Dashboard bestätigt werden.
+    """
 
     def __init__(self, dateiname="lager.json"):
         os.makedirs(DATEN_ORDNER, exist_ok=True)
         self.datei = os.path.join(DATEN_ORDNER, dateiname)
         self._lock = threading.RLock()
-        self.wp = [[None] * 3 for _ in range(3)]     # wp[x][y]
-        self.naechster_platz = None                  # C++: nextFetchPos
-        self.beobachter = []                         # Funktionen, die bei Änderung aufgerufen werden
+        self.behaelter = [[True] * 3 for _ in range(3)]   # behaelter[x][y]: steht ein Behälter auf dem Platz?
+        self.wp = [[None] * 3 for _ in range(3)]          # wp[x][y]: Werkstück im Behälter (oder None)
+        self.band = None                                  # None = kein Behälter am Band, sonst {"wp": ...}
+        self.transport = None                             # laufender (noch nicht gebuchter) Transport
+        self.klaerfall = ""                               # Text, wenn die Belegung geprüft werden muss
+        self.beobachter = []                              # f(lager) bei jeder Änderung
         if not self.laden():
             self.zuruecksetzen()
 
@@ -50,6 +97,8 @@ class Lager:
     # Hinweis: Das Original speichert die Datei mit vertauschten Indizes
     # (Dateischlüssel "A2" = wp[0][1]), zeigt im Dashboard aber "A2" = wp[1][0].
     # Damit Dateien vom TXT kompatibel bleiben, wird das hier genauso gemacht.
+    # "Storage" ist das Originalformat; "Behaelter", "Band" und "Transport" sind neu
+    # (das Original-Programm ignoriert sie).
     @staticmethod
     def _datei_schluessel(x, y):
         return "ABC"[x] + str(y + 1)
@@ -59,41 +108,56 @@ class Lager:
             return False
         try:
             with open(self.datei, encoding="utf-8") as f:
-                speicher = json.load(f)["Storage"]
+                daten = json.load(f)
+            speicher = daten["Storage"]
+            behaelter = daten.get("Behaelter", {})
             with self._lock:
                 for x in range(3):
                     for y in range(3):
-                        w = speicher.get(self._datei_schluessel(x, y))
-                        self.wp[x][y] = None if w is None else {
-                            "id": str(w.get("tag_uid", "")),
-                            "type": TYPEN[int(w.get("type", 0))],
-                            "state": ZUSTAENDE[int(w.get("state", 0))],
-                        }
+                        k = self._datei_schluessel(x, y)
+                        self.wp[x][y] = _wp_aus_datei(speicher.get(k))
+                        self.behaelter[x][y] = bool(behaelter.get(k, True))
+                        if not self.behaelter[x][y]:
+                            self.wp[x][y] = None
+                band = daten.get("Band")
+                self.band = None if band is None else {"wp": _wp_aus_datei(band.get("wp"))}
+                self.transport = daten.get("Transport")
+                if self.transport:
+                    t = self.transport
+                    self.klaerfall = (f"Der Transport {t['von']} → {t['nach']} wurde nicht abgeschlossen "
+                                      "(Programmende oder Fehler während der Fahrt). Bitte Quelle, Ziel und "
+                                      "Förderband am Regal prüfen, die Belegung ggf. korrigieren und bestätigen.")
             return True
-        except (OSError, ValueError, KeyError, IndexError) as e:
+        except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
             print(f"Lagerdatei {self.datei} unlesbar ({e}) – Lager wird zurückgesetzt")
             return False
 
     def speichern(self):
         with self._lock:
-            speicher = {}
+            speicher, behaelter = {}, {}
             for x in range(3):
                 for y in range(3):
-                    w = self.wp[x][y]
-                    speicher[self._datei_schluessel(x, y)] = None if w is None else {
-                        "tag_uid": w["id"],
-                        "state": ZUSTAENDE.index(w["state"]),
-                        "type": TYPEN.index(w["type"]),
-                    }
-        with open(self.datei, "w", encoding="utf-8") as f:
-            json.dump({"Storage": speicher}, f, indent=1)
+                    k = self._datei_schluessel(x, y)
+                    speicher[k] = _wp_in_datei(self.wp[x][y])
+                    behaelter[k] = self.behaelter[x][y]
+            daten = {"Storage": speicher, "Behaelter": behaelter,
+                     "Band": None if self.band is None else {"wp": _wp_in_datei(self.band["wp"])},
+                     "Transport": self.transport}
+        tmp = self.datei + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(daten, f, indent=1)
+        os.replace(tmp, self.datei)          # atomar – Datei ist nie halb geschrieben
 
     def zuruecksetzen(self):
-        """C++: resetStorageState – alle Plätze mit leerem Behälter."""
+        """Alle 9 Plätze mit leerem Behälter, Förderband leer."""
         with self._lock:
+            self.behaelter = [[True] * 3 for _ in range(3)]
             self.wp = [[None] * 3 for _ in range(3)]
-        self._geaendert()
+            self.band = None
+            self.transport = None
+            self.klaerfall = ""
         self.speichern()
+        self._geaendert()
 
     def _geaendert(self):
         for f in list(self.beobachter):
@@ -102,86 +166,241 @@ class Lager:
             except Exception as e:
                 print("Beobachter-Fehler:", e)
 
-    # --- Lagerlogik (1:1 aus TxtHighBayWarehouseStorage.cpp) --------------
-    # Suchreihenfolge im Original: Spalte 1..3, innerhalb der Spalte von
-    # unten (Zeile C) nach oben (Zeile A).
-    def _suche(self, bedingung):
-        for x in range(3):
-            for y in (2, 1, 0):
-                if bedingung(self.wp[x][y]):
-                    return (x, y)
-        return None
-
-    def behaelter_holen(self):
-        """C++: fetchContainer – Platz mit leerem Behälter suchen."""
-        with self._lock:
-            self.naechster_platz = self._suche(lambda w: w is None)
-            if self.naechster_platz is None:
-                return False
-        self._geaendert()
-        return True
-
-    def einlagern(self, werkstueck):
-        """C++: store – Werkstück kommt in den zuvor geholten Behälter."""
-        with self._lock:
-            if self.naechster_platz is None:
-                return False
-            x, y = self.naechster_platz
-            self.wp[x][y] = dict(werkstueck)
-        self._geaendert()
-        return True
-
-    def auslagern(self, typ):
-        """C++: fetch – erstes Werkstück der Farbe suchen und austragen."""
-        with self._lock:
-            self.naechster_platz = None
-            if typ == "NONE":
-                return False
-            self.naechster_platz = self._suche(lambda w: w is not None and w["type"] == typ)
-            if self.naechster_platz is None:
-                return False
-            x, y = self.naechster_platz
-            self.wp[x][y] = None
-        self._geaendert()
-        return True
-
-    def behaelter_zurueck(self):
-        """C++: storeContainer – leerer Behälter zurück auf seinen Platz."""
-        with self._lock:
-            if self.naechster_platz is None:
-                return False
-            x, y = self.naechster_platz
-            self.wp[x][y] = None
-        self._geaendert()
-        return True
-
-    def farbe_einlagerbar(self, typ):
-        """C++: canColorBeStored – max. 3 Werkstücke pro Farbe."""
-        with self._lock:
-            anzahl = sum(1 for x in range(3) for y in range(3)
-                         if self.wp[x][y] and self.wp[x][y]["type"] == typ)
-        return anzahl < 3
-
-    # --- Für Dashboard -----------------------------------------------------
-    def bestand(self):
-        with self._lock:
-            return {platz_name(x, y): (dict(self.wp[x][y]) if self.wp[x][y] else None)
-                    for y in range(3) for x in range(3)}
-
-    def platz_setzen(self, name, typ):
-        """Manuelle Korrektur, falls Software und Regal nicht übereinstimmen."""
+    # --- Abfragen ----------------------------------------------------------
+    def zustand(self, name):
+        if name == BAND:
+            with self._lock:
+                if self.band is None:
+                    return FREI
+                return BELEGT if self.band["wp"] else LEER
         x, y = platz_koordinaten(name)
         with self._lock:
-            self.wp[x][y] = None if typ in (None, "", "LEER") else {"id": "", "type": typ, "state": "RAW"}
-        self._geaendert()
+            if not self.behaelter[x][y]:
+                return FREI
+            return BELEGT if self.wp[x][y] else LEER
+
+    def werkstueck(self, name):
+        with self._lock:
+            if name == BAND:
+                return dict(self.band["wp"]) if self.band and self.band["wp"] else None
+            x, y = platz_koordinaten(name)
+            return dict(self.wp[x][y]) if self.wp[x][y] else None
+
+    def belegung(self, name):
+        """Kurzform für die Lagerstrategie: 'FREI', 'LEER' oder die Farbe des Werkstücks."""
+        z = self.zustand(name)
+        return self.werkstueck(name)["type"] if z == BELEGT else z
+
+    def snapshot(self):
+        """Belegung aller Plätze inkl. Band als dict (für Lagerstrategie und Dashboard)."""
+        with self._lock:
+            return {p: self.belegung(p) for p in PLAETZE + [BAND]}
+
+    def reservierung(self, name):
+        t = self.transport
+        if not t:
+            return ""
+        if name == t["von"]:
+            return "Quelle"
+        if name == t["nach"]:
+            return "Ziel"
+        return ""
+
+    def plaetze(self):
+        """Ausführliche Belegung für das Dashboard."""
+        with self._lock:
+            return {p: {"zustand": self.zustand(p), "wp": self.werkstueck(p), "reserviert": self.reservierung(p)}
+                    for p in PLAETZE + [BAND]}
+
+    def bestand(self):
+        """Kompatibel zum Original (MQTT f/i/stock): Platz -> Werkstück oder None."""
+        with self._lock:
+            return {p: self.werkstueck(p) for p in PLAETZE}
+
+    def anzahl(self, typ, mit_band=True):
+        with self._lock:
+            n = sum(1 for p in PLAETZE if self.belegung(p) == typ)
+            if mit_band and self.belegung(BAND) == typ:
+                n += 1
+            return n
+
+    def farbe_einlagerbar(self, typ):
+        """C++: canColorBeStored – max. 3 Werkstücke pro Farbe (inkl. Werkstück am Band)."""
+        return self.anzahl(typ) < cfg.MAX_JE_FARBE
+
+    def hat_leeren_behaelter(self):
+        """Leerer Behälter im Regal oder schon am Band bereitgestellt?"""
+        return self.zustand(BAND) == LEER or any(self.zustand(p) == LEER for p in PLAETZE)
+
+    def hat_farbe(self, typ):
+        return self.anzahl(typ, mit_band=False) > 0
+
+    # --- Transporte: reservieren -> buchen ----------------------------------
+    def beginne(self, von, nach):
+        """Transport anlegen und Quelle/Ziel reservieren (wird sofort gespeichert)."""
+        with self._lock:
+            if self.transport:
+                raise LagerFehler(f"Es läuft bereits ein Transport {self.transport['von']} → {self.transport['nach']}")
+            if self.klaerfall:
+                raise LagerFehler("Klärfall offen – zuerst Belegung prüfen und bestätigen")
+            if von == nach:
+                raise LagerFehler("Quelle und Ziel sind gleich")
+            if self.zustand(von) == FREI:
+                raise LagerFehler(f"Auf {von} steht kein Behälter")
+            if self.zustand(nach) != FREI:
+                raise LagerFehler(f"Ziel {nach} ist nicht frei ({self.zustand(nach)})")
+            wp = self.werkstueck(von)
+            self.transport = {"von": von, "nach": nach, "wp": wp,
+                              "art": "Auslagern" if nach == BAND else ("Einlagern" if von == BAND else "Umlagern")}
         self.speichern()
+        self._geaendert()
+
+    def abschliessen(self):
+        """Fahrt quittiert: Behälter (mit Inhalt) von der Quelle auf das Ziel buchen."""
+        with self._lock:
+            t = self.transport
+            if not t:
+                raise LagerFehler("Kein Transport offen")
+            wp = None
+            if t["von"] == BAND:
+                wp = self.band["wp"]
+                self.band = None
+            else:
+                x, y = platz_koordinaten(t["von"])
+                wp = self.wp[x][y]
+                self.wp[x][y], self.behaelter[x][y] = None, False
+            if t["nach"] == BAND:
+                self.band = {"wp": wp}
+            else:
+                x, y = platz_koordinaten(t["nach"])
+                self.wp[x][y], self.behaelter[x][y] = wp, True
+            self.transport = None
+        self.speichern()
+        self._geaendert()
+        return t
+
+    def klaerfall_melden(self, grund=""):
+        """Nach einem Fehler während einer Fahrt aufrufen."""
+        with self._lock:
+            if self.transport and not self.klaerfall:
+                t = self.transport
+                self.klaerfall = (f"Fahrt {t['von']} → {t['nach']} abgebrochen{': ' + grund if grund else ''}. "
+                                  "Bitte Quelle, Ziel und Förderband am Regal prüfen, die Belegung ggf. "
+                                  "korrigieren und bestätigen.")
+        self._geaendert()
+
+    def klaerfall_bestaetigen(self):
+        """Bediener hat die Belegung geprüft – offener Transport wird verworfen."""
+        with self._lock:
+            self.transport = None
+            self.klaerfall = ""
+        self.speichern()
+        self._geaendert()
+
+    # --- Buchungen am Förderband (Übergabe mit dem Greifer) -----------------
+    def band_ablage(self, werkstueck):
+        """Greifer hat ein Werkstück in den leeren Behälter am Band gelegt."""
+        with self._lock:
+            if self.zustand(BAND) != LEER:
+                raise LagerFehler(f"Am Band steht kein leerer Behälter ({self.zustand(BAND)})")
+            self.band["wp"] = dict(werkstueck)
+        self.speichern()
+        self._geaendert()
+
+    def band_entnahme(self):
+        """Greifer hat das Werkstück aus dem Behälter am Band genommen – Behälter bleibt leer stehen."""
+        with self._lock:
+            if self.zustand(BAND) != BELEGT:
+                raise LagerFehler("Am Band steht kein Behälter mit Werkstück")
+            wp = self.band["wp"]
+            self.band["wp"] = None
+        self.speichern()
+        self._geaendert()
+        return wp
+
+    # --- Manuelle Korrektur (Inventur) -------------------------------------
+    @staticmethod
+    def _inhalt(wert):
+        if wert in FARBEN:
+            return {"id": "", "type": wert, "state": "RAW"}
+        return None
+
+    def platz_setzen(self, name, wert):
+        """wert: 'FREI' (kein Behälter), 'LEER' oder eine Farbe."""
+        x, y = platz_koordinaten(name)
+        with self._lock:
+            self.behaelter[x][y] = wert != FREI
+            self.wp[x][y] = self._inhalt(wert)
+        self.speichern()
+        self._geaendert()
+
+    def band_setzen(self, wert):
+        """wert: 'FREI' (kein Behälter am Band), 'LEER' oder eine Farbe."""
+        with self._lock:
+            self.band = None if wert == FREI else {"wp": self._inhalt(wert)}
+        self.speichern()
+        self._geaendert()
+
+    def behaelter_anzahl(self):
+        with self._lock:
+            return sum(1 for p in PLAETZE if self.zustand(p) != FREI) + (0 if self.band is None else 1)
 
     def als_text(self):
-        """C++: print() – Belegung als 3x3-Text."""
-        z = {None: "_", "WHITE": "W", "RED": "R", "BLUE": "B", "NONE": "!"}
+        z = {FREI: ".", LEER: "_", "WHITE": "W", "RED": "R", "BLUE": "B", "NONE": "!"}
+        s = self.snapshot()
+        return "\n".join("".join(z[s["ABC"[y] + str(x + 1)]] for x in range(3)) for y in range(3)) + \
+            f"\nBand: {z[s[BAND]]}"
+
+
+# ===========================================================================
+class Einstellungen:
+    """Betriebsparameter, die im Dashboard geändert werden können (daten/einstellungen.json)."""
+
+    STANDARD = {
+        "auto_annahme": True,         # Werkstück in der Eingabe automatisch annehmen
+        "auto_umlagern": True,        # bei Stillstand selbstständig umlagern (ABC)
+        "umlagern_nach_s": 20,        # so lange muss die Anlage stillstehen
+        "vorrang": "EIN",             # "EIN" = Einlagerung vor Auslagerung, "AUS" = umgekehrt
+        "abc_fenster": 20,            # ABC-Analyse über die letzten N Bestellungen
+        "abc_min_bestellungen": 3,    # erst ab so vielen Bestellungen umlagern
+    }
+
+    def __init__(self, dateiname="einstellungen.json"):
+        os.makedirs(DATEN_ORDNER, exist_ok=True)
+        self.datei = os.path.join(DATEN_ORDNER, dateiname)
+        self._lock = threading.Lock()
+        self.werte = dict(self.STANDARD)
+        try:
+            with open(self.datei, encoding="utf-8") as f:
+                gelesen = json.load(f)
+            self.werte.update({k: v for k, v in gelesen.items() if k in self.STANDARD})
+        except (OSError, ValueError):
+            self.speichern()
+
+    def __getitem__(self, name):
+        return self.werte[name]
+
+    def setze(self, name, wert):
+        if name not in self.STANDARD:
+            raise KeyError(name)
+        typ = type(self.STANDARD[name])
+        if typ is bool:
+            wert = wert in (True, 1, "1", "true", "an", "on")
+        elif typ is int:
+            wert = int(wert)
+        elif name == "vorrang" and wert not in ("EIN", "AUS"):
+            raise ValueError("vorrang muss EIN oder AUS sein")
         with self._lock:
-            return "\n".join("".join(z[self.wp[x][y]["type"] if self.wp[x][y] else None] for x in range(3))
-                             for y in range(3))
+            self.werte[name] = wert
+        self.speichern()
+        return wert
+
+    def speichern(self):
+        with open(self.datei, "w", encoding="utf-8") as f:
+            json.dump(self.werte, f, indent=1)
+
+    def als_dict(self):
+        return dict(self.werte)
 
 
 # ===========================================================================

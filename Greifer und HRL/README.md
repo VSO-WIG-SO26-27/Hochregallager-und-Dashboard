@@ -9,6 +9,7 @@ Die Logik ist 1:1 aus dem Original-C++-Code übernommen ([fischertechnik/txt_tra
 Der Mac steuert beide TXT-Controller per WLAN über [ftrobopy](https://github.com/ftrobopy/ftrobopy).
 
 ```
+d "Greifer und HRL"
 python3 start.py              # Hochregallager + Greifer
 python3 start.py --nur-hbw    # nur das Hochregallager
 python3 start.py --sim        # ohne Anlage (Simulation)
@@ -24,7 +25,7 @@ Das Dashboard öffnet sich automatisch unter http://127.0.0.1:8000.
    (`paho-mqtt` brauchst du nur für `--mqtt`.)
 2. **Netzwerk:** Den Mac mit dem WLAN des Lernfabrik-Routers verbinden.
    Prüfen mit `ping 192.168.0.12` (Hochregallager) und `ping 192.168.0.13` (Greifer).
-   Andere IPs gibst du mit `--ip` bzw. `--ip-greifer` an oder trägst sie in `hochregallager/konfiguration.py` ein.
+   Andere IPs gibst du mit `--ip` bzw. `--ip-greifer` an oder trägst sie in `code/konfiguration.py` ein.
 3. **Original-Programme stoppen:** Auf **beiden** TXT das laufende Programm (`TxtFactoryHBW` bzw. `TxtFactoryVGR`) beenden und *Einstellungen → Autoload* ausschalten. Danach die TXT neu starten.
 4. **Kalibrierwerte (optional):** Die Original-Dateien vom TXT funktionieren im selben Format.
    Lege sie dafür in den Ordner `daten/`:
@@ -54,39 +55,74 @@ python3 hardwaretest.py --station greifer  # Greifer + Ein-/Ausgabe
 Beim Greifer immer **zuerst die Höhe** (Test 2) referenzieren, damit der Arm oben ist, bevor er sich dreht.
 Fährt etwas in die falsche Richtung, sofort **Strg+C** drücken.
 
-## 3. Bedienung im Dashboard
+## 3. Bedienung im Dashboard (Lagerleitstand)
 
-Der Reiter **Übersicht** ist für den Automatikbetrieb mit Greifer und Hochregallager gedacht:
+Das Dashboard ist wie eine Industrie-HMI aufgebaut: Kopfzeile mit Anlagenzustand, **Kennzahlen**-Knopf und **NOT-HALT**, darunter eine Alarmleiste für Störungen und Klärfälle.
 
-- **Einlagern:** Werkstück in die Eingabe legen. Der Greifer erkennt es (Lichtschranke I7) und saugt es an. Dann fährt er zum Farbsensor und bestimmt die Farbe. In der Zwischenzeit stellt das Hochregallager einen leeren Behälter aufs Band. Der Greifer legt das Werkstück hinein, danach lagert das Hochregallager den Behälter ein.
-  Wird keine Farbe erkannt, landet das Werkstück in der Ablage für falsche Werkstücke.
-  Die automatische Annahme lässt sich abschalten. Dann startest du den Vorgang mit *Jetzt annehmen*.
-- **Bestellen:** Farbe wählen. Das Hochregallager lagert den Behälter aus, der Greifer nimmt das Werkstück heraus und legt es in die Ausgabe. Danach geht der leere Behälter zurück ins Regal. Ist die Ausgabe belegt (C4), wartet der Greifer, bis sie frei ist.
-- **NOT-HALT** stoppt beide Stationen. Danach jede Station einzeln quittieren.
+| Reiter | Inhalt |
+|---|---|
+| **Leitstand** | Kennzahl-Kacheln, Frontansicht des Regals (Platzzustand, ABC-Zone, Reservierungen, Position des Regalbediengeräts, Förderstrecke), Auslagerauftrag anlegen, **Warteschlange**, zuletzt erledigte Aufträge, Greifer & Übergabe, Ereignisse |
+| **Lager & Umlagerung** | Lagerplatz-Tabelle mit Inventur, **manuelle Umlagerung**, automatische Umlagerung (ABC), ABC-Analyse |
+| **Kennzahlen** | Spielzeiten, Wartezeiten an der Übergabe, Durchsatz je Stunde, Durchlaufzeiten, Füllgrad, Zugriffe je Lagerplatz |
+| **Einrichten HRL / Greifer** | Achsen, Eingänge, Handbetrieb, Kalibrierung (wie bisher) |
+| **Protokoll** | alle Meldungen beider Stationen |
 
-Der Reiter **Hochregallager** enthält die Handsteuerung, die Kalibrierung und den Handbetrieb des Regals (wie bisher). Solange der Greifer gerade mit dem Hochregallager arbeitet, sind diese Knöpfe gesperrt.
+### Lagerlogik
 
-Der Reiter **Greifer** enthält:
-- Achspositionen und Eingänge
-- Handbetrieb: Achsen verfahren, gespeicherte Punkte anfahren, Sauger an/aus
-- **Positionen kalibrieren:** Punkt wählen (Eingabe, Farbsensor, NFC, Ablage, Ausgabe, Hochregallager …). Der Greifer fährt ihn an. Dann mit den ±-Knöpfen justieren und *Position speichern*. Die Anfahrpunkte „…0“ werden dabei wie im Original mit angepasst.
-- **Farbsensor kalibrieren:** Nacheinander ein weißes, rotes und blaues Werkstück unter den Sensor legen und jeweils *messen* drücken. Die Schwellwerte werden wie im Original als Mittelwerte berechnet.
+- **Referenzfahrt (0/0) nur beim Start.** Danach bleibt das Regalbediengerät (RBG) nach jeder Aktion an seiner Position stehen; sie ist der Startpunkt der nächsten Fahrt. Nach einer Störung wird nur dann referenziert, wenn eine Achse ihre Referenz verloren hat.
+- **Nachreferenzieren in Pausen:** Ohne Referenzfahrt nach jedem Auftrag summieren sich kleine Zählfehler der Encoder (der Behälter wird dann nicht mehr sicher angehoben). Deshalb fährt das RBG nach `NACHREFERENZ_NACH_TRANSPORTEN` (Standard 4) Transporten in der nächsten Pause kurz auf 0/0 und zurück an seine Position – spätestens nach 10 Transporten auch ohne Pause. Beim Aufnehmen hebt es zusätzlich etwas höher an als das Original (`Y_HUB_AUFNEHMEN` = 60 statt 40, in `code/konfiguration.py`).
+- **Leerbehälter sofort bereitstellen:** Sobald eine Einlagerung startet, fordert der Greifer den leeren Behälter an. Das HRL stellt ihn bereit, während der Greifer das Werkstück holt und die Farbe prüft. Der Greifer muss an der Übergabe so kaum noch warten. Wird das Werkstück ausgeschleust, bleibt der Behälter für die nächste Einlagerung am Band.
+- **Leerer Behälter bleibt am Band.** Nach einer Auslagerung bleibt der leere Behälter auf der Förderstrecke stehen.
+  - Folgt eine **Einlagerung**, legt der Greifer das Werkstück direkt hinein (eine Fahrt statt zwei).
+  - Folgt eine **Auslagerung**, wird der Behälter zuerst zurück ins Regal gestellt.
+- **Drei Platzzustände:** *Behälter mit Werkstück*, *leerer Behälter*, *Platz frei* (Behälter unterwegs oder am Band).
+- **Reservierung → Buchung:** Vor jeder Fahrt werden Quelle und Ziel reserviert (orange gestrichelt). Gebucht wird erst, wenn die Fahrt abgeschlossen ist. Bricht eine Fahrt ab (Störung, Not-Halt, Programmende), entsteht ein **Klärfall**. Dann die Belegung am Regal prüfen, ggf. per Inventur korrigieren und *Bestand geprüft* drücken. Bis dahin starten keine Aufträge.
+- **ABC-Zuordnung nach Bestellhistorie:** Die Plätze werden nach Fahrweg vom Förderband in Zone A (kurz), B und C (lang) eingeteilt. Die meistbestellte Farbe der letzten N Bestellungen ist Klasse A usw. Eingelagert wird in die Zone der Farbe, ausgelagert auf dem kürzesten Weg.
+- **Umlagerung im Stillstand:** Steht die Anlage länger als eingestellt still (kein Auftrag, Greifer in Ruhe, Eingabe leer), plant das HRL Umlagerungen, bis jedes Werkstück in seiner Zone steht. Ein neuer Auftrag unterbricht nach dem laufenden Zug. Abschaltbar unter *Lager & Umlagerung*.
+- **Manuelle Umlagerung:** *Tauschen über die Förderstrecke* (Behälter 1 aufs Band, Behälter 2 auf den frei gewordenen Platz, Behälter vom Band auf den neu freien Platz), *Verschieben* auf einen freien Platz, *Behälter vom Band einlagern*, *Behälter auf dem Band abstellen*. Ein Klick auf einen Lagerplatz in der Frontansicht öffnet Details und Inventur.
 
-In der Simulation (`--sim`) gibt es zusätzlich Knöpfe, mit denen man Werkstücke in die Eingabe legen und die Ausgabe belegen kann.
+### Aufträge
+
+- **Auslagerung:** Farbe und Priorität (*normal* / *eilig*) wählen und *Auftrag anlegen*. Es werden nur so viele Aufträge je Farbe angenommen, wie Werkstücke im Lager sind.
+- **Einlagerung:** entsteht automatisch, sobald ein Werkstück in der Eingabe liegt (oder per *Jetzt annehmen*). Ist eine Farbe schon 3x eingelagert, wird das Werkstück ausgeschleust.
+- **Warteschlange:** max. 5 offene Aufträge. Reihenfolge: eilig vor normal, dann **Vorrang** (Einlagerung zuerst oder Auslagerung zuerst, umschaltbar), dann Eingang. Wartende Aufträge lassen sich hochstufen oder stornieren.
+
+### Kennzahlen
+
+| Kennzahl | Definition |
+|---|---|
+| Spielzeit netto | reine Fahrzeit des RBG je Ein-/Aus-/Umlagerung |
+| Spielzeit brutto | vom Auftrag ans HRL bis zur Buchung (inkl. Warten auf den Greifer) |
+| Wartezeit | an der Übergabe: wie lange stand der Greifer vor dem Behälter bzw. der Behälter vor dem Greifer bereit? |
+| Durchlaufzeit | Auftrag gestartet → eingelagert bzw. Werkstück in der Ausgabe |
+| Durchsatz | Ein- und Auslagerungen der letzten Stunde bzw. je Betriebsstunde |
+| Auslastung RBG | Summe der Netto-Spielzeiten / Betriebszeit |
+| Füllgrad | Plätze mit Werkstück / 9 |
+| Zugriffe | Ein- und Auslagerungen je Lagerplatz (inkl. Umlagerungen) |
+
+Die Rohdaten liegen in `daten/kennzahlen.json`, jedes Spiel zusätzlich in `daten/spiele.csv` (Semikolon, Dezimalkomma – direkt in Excel öffnen). *Kennzahlen zurücksetzen* löscht beides inklusive Bestellhistorie.
+
+### Simulation und Test
+
+`python3 start.py --sim` startet alles ohne Anlage; im Leitstand gibt es dann Knöpfe zum Einlegen von Werkstücken.
+`python3 tests/test_lagerlogik.py` spielt die Abläufe automatisch durch und prüft die Anforderungen.
 
 ## 4. Aufbau des Codes
 
 | Python | entspricht im C++-Original | Inhalt |
 |---|---|---|
-| `hochregallager/konfiguration.py` | Konstruktoren, `PinAssignmentTXT.md`, `saveDefault()` | IPs, Pin-Belegung, Standardpositionen |
-| `hochregallager/hardware.py` | Transferbereich `FISH_X1_TRANSFER` | Motoren/Ausgänge/Zähler/Eingänge (ftrobopy) + Simulation |
-| `hochregallager/achsen.py` | `TxtAxis1RefSwitch`, `TxtAxisNSwitch`, `TxtConveyorBelt` | Referenzfahrt, Positionieren, Ausleger, Band |
-| `hochregallager/station.py` | `TxtSimulationModel` | gemeinsame Grundlage: Status, Not-Halt, Hauptschleife |
-| `hochregallager/steuerung.py` | `TxtHighBayWarehouse*.cpp` | Hochregallager: Abläufe + Zustandsautomat |
-| `hochregallager/greifer.py` | `TxtVacuumGripperRobot*.cpp`, `TxtVacuumGripper`, `TxtDeliveryPickupStation` | Greifer + Ein-/Ausgabe: Abläufe + Zustandsautomat |
-| `hochregallager/daten.py` | `…CalibData`, `…Storage` | Lager, Kalibrierungen (Original-JSON-Format) |
-| `hochregallager/mqtt_bruecke.py` | `TxtMqttFactoryClient` | optional: HBW mit Original-Greifer per MQTT |
-| `hochregallager/dashboard.py/.html` | – (neu) | Dashboard |
+| `code/konfiguration.py` | Konstruktoren, `PinAssignmentTXT.md`, `saveDefault()` | IPs, Pin-Belegung, Standardpositionen |
+| `code/hardware.py` | Transferbereich `FISH_X1_TRANSFER` | Motoren/Ausgänge/Zähler/Eingänge (ftrobopy) + Simulation |
+| `code/achsen.py` | `TxtAxis1RefSwitch`, `TxtAxisNSwitch`, `TxtConveyorBelt` | Referenzfahrt, Positionieren, Ausleger, Band |
+| `code/station.py` | `TxtSimulationModel` | gemeinsame Grundlage: Status, Not-Halt, Hauptschleife |
+| `code/steuerung.py` | `TxtHighBayWarehouse*.cpp` | Hochregallager: Abläufe + Zustandsautomat |
+| `code/greifer.py` | `TxtVacuumGripperRobot*.cpp`, `TxtVacuumGripper`, `TxtDeliveryPickupStation` | Greifer + Ein-/Ausgabe: Abläufe + Zustandsautomat |
+| `code/daten.py` | `…CalibData`, `…Storage` | Lagerverwaltung (3 Platzzustände, Band, Reservierung/Buchung, Klärfall), Einstellungen, Kalibrierungen |
+| `code/lagerstrategie.py` | – (neu) | ABC-Zuordnung nach Bestellhistorie, Platzwahl, Umlagerplanung |
+| `code/auftraege.py` | – (neu) | Warteschlange (5 Aufträge, Priorität, Vorrang) |
+| `code/kennzahlen.py` | – (neu) | Spielzeiten, Wartezeiten, Durchsatz, Füllgrad, Zugriffe |
+| `code/mqtt_bruecke.py` | `TxtMqttFactoryClient` | optional: HBW mit Original-Greifer per MQTT |
+| `code/dashboard.py/.html` | – (neu) | Dashboard |
 
 ### Zusammenspiel Greifer ↔ Hochregallager
 
@@ -135,30 +171,32 @@ stateDiagram-v2
     CALIB_DPS_NEXT --> IDLE
 ```
 
-### Zustandsautomat Hochregallager (aus `TxtHighBayWarehouseRun.cpp`)
+### Zustandsautomat Hochregallager (erweitert)
 
 ```mermaid
 stateDiagram-v2
     [*] --> INIT
-    INIT --> IDLE: Referenzfahrt
+    INIT --> IDLE: Referenzfahrt (nur hier)
     IDLE --> FETCH_CONTAINER: Behälter holen
-    FETCH_CONTAINER --> STORE_WP: Behälter am Band
-    STORE_WP --> IDLE: Einlagern
+    FETCH_CONTAINER --> STORE_WP: Leerbehälter am Band (ggf. sofort)
+    STORE_WP --> IDLE: Einlagern auf ABC-Platz
     IDLE --> FETCH_WP: Auslagern
-    FETCH_WP --> FETCH_WP_WAIT: Werkstück am Band
-    FETCH_WP_WAIT --> STORE_CONTAINER: Behälter zurück
-    STORE_CONTAINER --> IDLE
+    FETCH_WP --> FETCH_WP_WAIT: ggf. Leerbehälter zurück, Werkstück aufs Band
+    FETCH_WP_WAIT --> IDLE: entnommen – Behälter bleibt am Band
+    IDLE --> UMLAGERN: Stillstand / von Hand
+    UMLAGERN --> IDLE: Plan fertig oder Auftrag wartet
     IDLE --> CALIB_HBW: Kalibrieren
     CALIB_HBW --> CALIB_HBW_NAV
     CALIB_HBW_NAV --> CALIB_HBW_MOVE
     CALIB_HBW_MOVE --> IDLE: beenden
-    FAULT --> IDLE: quittieren
+    FAULT --> IDLE: quittieren (Klärfall bestätigen)
 ```
 
 ## 5. Unterschiede zum Original
 
 - **Kein NFC:** Die NFC-Position wird wie im Original angefahren, gelesen oder beschrieben wird aber nichts. Jedes Werkstück bekommt stattdessen eine erzeugte ID.
 - **Auslagern direkt in die Ausgabe:** Im Original fährt das Werkstück vorher über Bearbeitungsstation und Sortierstrecke. Das kommt dazu, sobald diese Stationen in Python laufen. Die Positionen dafür (MPO, SSD) sind schon kalibrierbar.
+- **Lagerlogik:** keine Referenzfahrt nach jedem Auftrag, leerer Behälter bleibt am Band, ABC-Zuordnung, Umlagerung, Reservierung/Buchung mit Klärfall, Warteschlange und Kennzahlen (siehe Abschnitt 3). Der MQTT-Befehl `VGR_HBW_STORECONTAINER` (4) quittiert nur noch die Entnahme – der Behälter bleibt am Band.
 - **Fehlerbehandlung:** Statt `exit(1)` gehen die Stationen in den Zustand FAULT und lassen sich quittieren. Meldet das Hochregallager während einer Übergabe einen Fehler, bricht auch der Greifer ab, statt endlos zu warten.
 - **Eingabe-Entprellung:** Ein Werkstück wird erst angenommen, wenn die Lichtschranke 0,5 s belegt ist. Außerdem muss das Hochregallager bereit sein und einen leeren Behälter haben.
 - **Bedienung:** Dashboard statt Joystick und NFC-Befehlskarten. Not-Halt und Handbetrieb sind neu. Töne werden nicht abgespielt.

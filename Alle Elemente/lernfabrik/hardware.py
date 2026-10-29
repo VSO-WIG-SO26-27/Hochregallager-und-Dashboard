@@ -31,6 +31,44 @@ class HardwareFehler(Exception):
     pass
 
 
+def _ftrobopy_reparieren(ftrobopy):
+    """Fehler in ftrobopy beheben (betrifft nur den Betrieb mit Erweiterungs-TXT).
+
+    Mit Erweiterung tauscht ftrobopy die Daten komprimiert aus und liest aus jeder
+    Antwort des TXT fest 77 Werte. Enthält die Antwort weniger Daten, läuft
+    compBuffer.GetBits über das Pufferende -> IndexError -> ftrobopy beendet den
+    Datenaustausch ("Network error index out of range"), der TXT fällt aus dem
+    Online-Modus ("kein Programm") und alle Eingänge frieren ein.
+    Ob es passiert, hängt von der Bit-Ausrichtung ab – typischerweise dann, wenn sich
+    ein Eingang ändert (z. B. Lichtschranke am Ofen).
+
+    Korrektur: fehlende Bits als 0 lesen. Im Kompressionsformat bedeutet "00"
+    "keine Änderung" – nicht übertragene Werte behalten also ihren letzten Stand,
+    genau wie es die Auffüllbits am Ende einer Antwort ohnehin vorsehen."""
+    cb = getattr(ftrobopy, "compBuffer", None)
+    if cb is None or getattr(cb, "_lernfabrik_repariert", False):
+        return
+
+    def GetBits(self, count):
+        while self.m_bitcount < count:
+            if len(self.m_compressed):
+                cp = self.m_compressed[0]
+                self.m_compressed = self.m_compressed[1:]
+                if isinstance(cp, str):
+                    cp = ord(cp)
+            else:
+                cp = 0                      # Pufferende: wie Auffüllbits behandeln
+            self.m_bitbuffer |= cp << self.m_bitcount
+            self.m_bitcount += 8
+        res = self.m_bitbuffer & (0xffffffff >> (32 - count))
+        self.m_bitbuffer >>= count
+        self.m_bitcount -= count
+        return res
+
+    cb.GetBits = GetBits
+    cb._lernfabrik_repariert = True
+
+
 def _teile(nr):
     """Anschlussnummer -> (Nummer am TXT, 0 = Master / 1 = Erweiterung)."""
     return (nr - cfg.ERW, 1) if nr > cfg.ERW else (nr, 0)
@@ -53,6 +91,7 @@ class TxtHardware:
             import ftrobopy
         except ImportError as e:
             raise HardwareFehler("ftrobopy ist nicht installiert: py -m pip install ftrobopy") from e
+        _ftrobopy_reparieren(ftrobopy)
 
         self.ip = ip
         try:
@@ -80,9 +119,27 @@ class TxtHardware:
         self._eingaenge = {nr: obj(self.txt.input, nr) for nr in alle if nr not in self._spannung}
         self.alles_aus()
 
+    # --- Verbindungsüberwachung ---------------------------------------------
+    VERBINDUNG_TIMEOUT_S = 2.0
+
+    def _pruefe_verbindung(self):
+        """ftrobopy beendet seinen Datenaustausch-Thread bei einem Netzwerk-/CRC-Fehler
+        stillschweigend (nur eine print-Ausgabe). Danach bleiben alle Eingänge auf dem
+        letzten Wert stehen und der TXT fällt aus dem Online-Modus ("kein Programm").
+        Hier wird das erkannt, damit die Station mit einer klaren Meldung anhält."""
+        stop = getattr(self.txt, "_txt_stop_event", None)
+        zuletzt = getattr(self.txt, "_update_timer", None)
+        if (stop is not None and stop.is_set()) or \
+                (zuletzt is not None and time.time() - zuletzt > self.VERBINDUNG_TIMEOUT_S):
+            raise HardwareFehler(
+                f"Verbindung zum TXT {self.ip} verloren (Datenaustausch von ftrobopy gestoppt). "
+                "Eingänge sind nicht mehr aktuell – Konsole auf 'Connection to TXT aborted', "
+                "'Network error' oder 'CRC' prüfen und das Programm neu starten.")
+
     # --- Motoren -----------------------------------------------------------
     def motor(self, nr, geschwindigkeit):
         """Motor mit Geschwindigkeit -512..512 laufen lassen (0 = aus)."""
+        self._pruefe_verbindung()
         self._motoren[nr].setSpeed(int(geschwindigkeit))
 
     def motor_strecke(self, nr, schritte):
@@ -99,6 +156,7 @@ class TxtHardware:
     # --- Einzelausgänge ----------------------------------------------------
     def ausgang(self, nr, wert):
         """Ausgang setzen, 0..512 (C++: duty[ch] = 512)."""
+        self._pruefe_verbindung()
         self._ausgaenge[nr].setLevel(int(wert))
 
     # --- Zähler (nur Master) ----------------------------------------------
@@ -123,12 +181,14 @@ class TxtHardware:
     # --- Eingänge ----------------------------------------------------------
     def eingang(self, nr):
         """Digitaler Eingang: 1 = Taster gedrückt / Licht kommt an (C++: uni[] == 1)."""
+        self._pruefe_verbindung()
         if nr in self._spannung:
             return int(self._spannung[nr].voltage() > 600)
         return int(self._eingaenge[nr].state())
 
     def spannung(self, nr):
         """Analoger Eingang in mV (C++: MODE_U, uni[]) – z. B. Farbsensor."""
+        self._pruefe_verbindung()
         return int(self._spannung[nr].voltage())
 
     # --- Sonstiges ---------------------------------------------------------

@@ -1,25 +1,32 @@
 {
  "Storage": {
   "A1": {
-   "tag_uid": "134CBA6B055F43",
+   "tag_uid": "322CD3078C3B4B",
    "state": 0,
    "type": 1
   },
-  "A2": {
-   "tag_uid": "8F4732A431E748",
-   "state": 0,
-   "type": 1
-  },
-  "A3": {
-   "tag_uid": "980F882BB65449",
-   "state": 0,
-   "type": 3
-  },
+  "A2": null,
+  "A3": null,
   "B1": null,
   "B2": null,
   "B3": null,
   "C1": null,
   "C2": null,
   "C3": null
- }
+ },
+ "Behaelter": {
+  "A1": true,
+  "A2": false,
+  "A3": true,
+  "B1": true,
+  "B2": true,
+  "B3": true,
+  "C1": true,
+  "C2": true,
+  "C3": true
+ },
+ "Band": {
+  "wp": null
+ },
+ "Transport": null
 }
