@@ -1,5 +1,0 @@
-ftrobopy>=1.97
-# optional, nur für --mqtt:
-paho-mqtt
-# optional, nur für die automatischen Tests (py -m pytest):
-pytest

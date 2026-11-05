@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalibrierprogramm RBG</title>
+<style>
+/* Gleiche Optik wie der Lagerleitstand (ruhige HMI, Farbe nur für Bedeutung). Läuft ohne Internet. */
+:root {
+  color-scheme: light;
+  --bg: #e6e9ec; --panel: #f8f9fa; --panel-kopf: #eef0f3; --feld: #ffffff;
+  --line: #cdd3d9; --line2: #dde1e6;
+  --ink: #1a1f25; --ink2: #47505b; --muted: #6c7580;
+  --accent: #1c5da6; --accent-ink: #ffffff; --accent-soft: #dce8f6;
+  --ok: #1e7f3a; --ok-soft: #dff1e4; --warn: #b86e00; --warn-soft: #fbedd5;
+  --err: #c0262d; --err-soft: #fadcdc; --calib: #6a4bc4;
+  --kopf: #1c232c; --kopf-ink: #e9edf1; --kopf-muted: #9aa5b1; --kopf-line: #2d3743;
+  --regal: #8d969f; --regal-fill: #eef1f4;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #12161b; --panel: #1a1f26; --panel-kopf: #20262e; --feld: #151a20;
+    --line: #2f3843; --line2: #262e37;
+    --ink: #e5e9ee; --ink2: #b5bdc7; --muted: #8b95a1;
+    --accent: #4b8fdd; --accent-ink: #0b1420; --accent-soft: #1d3047;
+    --ok: #3fae5f; --ok-soft: #173322; --warn: #e09a2b; --warn-soft: #3a2a10;
+    --err: #ec5b5f; --err-soft: #3d1b1d; --calib: #9a82ea;
+    --kopf: #0d1116; --kopf-line: #232b35;
+    --regal: #66707b; --regal-fill: #1e242b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       font-variant-numeric: tabular-nums; }
+button, input { font: inherit; color: inherit; }
+
+.kopf { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+        padding: 8px 18px; background: var(--kopf); color: var(--kopf-ink); border-bottom: 1px solid var(--kopf-line); }
+.marke { display: flex; align-items: center; gap: 10px; }
+.logo { width: 34px; height: 34px; border-radius: 6px; background: var(--calib); color: #fff; display: grid;
+        place-items: center; font-weight: 800; font-size: 12px; }
+.marke b { display: block; font-size: 15px; }
+.marke small { display: block; color: var(--kopf-muted); font-size: 11.5px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+        border: 1px solid var(--kopf-line); font-size: 12px; color: var(--kopf-ink); }
+.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--kopf-muted); }
+.chip.ok i { background: #3fae5f; } .chip.warn i { background: #e09a2b; } .chip.err i { background: #ec5b5f; }
+.chip.busy i { background: #4b8fdd; animation: puls 1s infinite; }
+@keyframes puls { 50% { opacity: .3; } }
+.stopp { background: var(--err); color: #fff; border: 2px solid #fff3; border-radius: 8px; padding: 9px 22px;
+         font-weight: 800; letter-spacing: .06em; cursor: pointer; }
+.stopp:active { transform: translateY(1px); }
+
+main { display: grid; grid-template-columns: 330px minmax(380px, 1fr) 360px; gap: 14px; padding: 14px 18px;
+       align-items: start; }
+@media (max-width: 1180px) { main { grid-template-columns: 1fr 1fr; } .p-detail { grid-column: span 2; } }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } .p-detail { grid-column: auto; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.panel > h2 { margin: 0; padding: 8px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--ink2); background: var(--panel-kopf); border-bottom: 1px solid var(--line2);
+              display: flex; justify-content: space-between; align-items: center; }
+.panel > h2 span { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+.inhalt { padding: 12px; }
+.abschnitt { padding: 12px; border-top: 1px solid var(--line2); }
+.abschnitt:first-child { border-top: 0; }
+.label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+
+.btn { border: 1px solid var(--line); background: var(--feld); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primaer { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.gruen { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 600; }
+.btn.klein { padding: 4px 9px; font-size: 12.5px; }
+.zeile { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Istposition */
+.ist { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ist div { background: var(--feld); border: 1px solid var(--line2); border-radius: 6px; padding: 8px 10px; }
+.ist small { display: block; color: var(--muted); font-size: 11px; }
+.ist b { font: 600 24px/1.1 var(--mono); }
+.zstatus { margin-top: 8px; display: flex; justify-content: space-between; color: var(--ink2); font-size: 12.5px; }
+.zstatus b.aus { color: var(--warn); }
+
+/* Tippbetrieb */
+.pad { display: grid; grid-template-columns: repeat(3, 84px); grid-template-rows: repeat(3, 58px); gap: 6px;
+       justify-content: center; margin: 4px 0 10px; }
+.pad button { border: 1px solid var(--line); background: var(--feld); border-radius: 8px; cursor: pointer; font-size: 18px; }
+.pad button small { display: block; font-size: 10.5px; color: var(--muted); }
+.pad button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.pad button:disabled { opacity: .4; cursor: not-allowed; }
+.pad .mitte { display: grid; place-items: center; font: 11px var(--mono); color: var(--muted); text-align: center; }
+.segment { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.segment button { flex: 1; border: 0; background: var(--feld); padding: 5px 0; cursor: pointer; border-left: 1px solid var(--line2); }
+.segment button:first-child { border-left: 0; }
+.segment button.an { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.abs { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+input[type=number] { width: 100%; border: 1px solid var(--line); background: var(--feld); border-radius: 6px; padding: 6px 8px;
+                     font-family: var(--mono); }
+.tipp { font-size: 12px; color: var(--muted); margin-top: 8px; }
+kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--feld); }
+
+/* Regal */
+.regal { display: grid; grid-template-columns: 26px repeat(3, 1fr); gap: 8px; }
+.regal .kz { display: grid; place-items: center; color: var(--muted); font-weight: 600; font-size: 12px; }
+.fach { position: relative; border: 1.5px solid var(--regal); background: var(--regal-fill); border-radius: 7px; padding: 8px 9px;
+        cursor: pointer; text-align: left; min-height: 74px; }
+.fach:hover { border-color: var(--accent); }
+.fach.sel { outline: 3px solid var(--accent); outline-offset: 1px; }
+.fach b { font-size: 15px; }
+.fach .w { font: 12px var(--mono); color: var(--ink2); display: block; margin-top: 2px; }
+.fach .st { position: absolute; top: 7px; right: 8px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+            background: var(--warn-soft); color: var(--warn); }
+.fach.gelernt .st { background: var(--ok-soft); color: var(--ok); }
+.fach.hier::after { content: attr(data-hoehe); position: absolute; bottom: 6px; right: 8px; font: 700 10px var(--mono); color: #fff;
+                    background: var(--calib); border-radius: 4px; padding: 1px 5px; }
+.band { margin-top: 10px; display: grid; grid-template-columns: 26px 1fr; gap: 8px; }
+.band .fach { min-height: 56px; border-style: dashed; }
+.fortschritt { margin: 12px 0 2px; height: 8px; background: var(--line2); border-radius: 99px; overflow: hidden; }
+.fortschritt i { display: block; height: 100%; background: var(--ok); transition: width .3s; }
+svg.karte { width: 100%; height: auto; display: block; background: var(--feld); border: 1px solid var(--line2); border-radius: 6px; }
+
+/* Detail */
+.titel { display: flex; align-items: baseline; gap: 10px; }
+.titel b { font-size: 28px; }
+.titel span { color: var(--muted); }
+table.vgl { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-family: var(--mono); }
+table.vgl th { font: 11.5px system-ui, sans-serif; color: var(--muted); text-align: right; padding: 3px 6px; }
+table.vgl th:first-child, table.vgl td:first-child { text-align: left; font-family: system-ui, sans-serif; color: var(--ink2); }
+table.vgl td { text-align: right; padding: 4px 6px; border-top: 1px solid var(--line2); }
+.delta-0 { color: var(--ok); } .delta-x { color: var(--warn); font-weight: 600; }
+.knoepfe { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.knoepfe .breit { grid-column: span 2; }
+.hinweis { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; color: var(--ink2); }
+.hinweis b { color: var(--ink); }
+ol.ablauf { margin: 6px 0 0; padding-left: 18px; color: var(--ink2); font-size: 12.5px; }
+ol.ablauf li { margin: 2px 0; }
+
+.log { max-height: 220px; overflow: auto; font: 12px/1.5 var(--mono); }
+.log div { padding: 1px 0; color: var(--ink2); }
+.log div.ok { color: var(--ok); } .log div.fehler { color: var(--err); }
+.log span { color: var(--muted); margin-right: 6px; }
+.fehlerband { display: none; background: var(--err-soft); color: var(--err); padding: 8px 12px; border-bottom: 1px solid var(--line2);
+              align-items: center; justify-content: space-between; gap: 10px; }
+.fehlerband.an { display: flex; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--kopf); color: var(--kopf-ink);
+         padding: 8px 16px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.an { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="kopf">
+  <div class="marke"><div class="logo">RBG</div><div><b>Kalibrierprogramm</b><small>Grundhöhe je Lagerplatz einlernen</small></div></div>
+  <div class="chips">
+    <span class="chip" id="c-modus"><i></i><span>–</span></span>
+    <span class="chip" id="c-zustand"><i></i><span>–</span></span>
+    <span class="chip" id="c-datei"><i></i><span>–</span></span>
+  </div>
+  <button class="stopp" id="stopp" title="Esc">STOPP</button>
+</header>
+
+<main>
+  <!-- Handsteuerung -->
+  <section class="panel">
+    <h2>Handsteuerung <span id="zeit"></span></h2>
+    <div class="fehlerband" id="fehlerband"><span id="fehlertext"></span><button class="btn klein" data-b="quittieren">Quittieren</button></div>
+    <div class="abschnitt">
+      <div class="ist">
+        <div><small>X (Fahrachse)</small><b id="ist-x">–</b></div>
+        <div><small>Y (Hubachse)</small><b id="ist-y">–</b></div>
+      </div>
+      <div class="zstatus"><span>Ausleger: <b id="ist-z">–</b></span><span>Lichtschranke Band: <b id="ist-ls">–</b></span></div>
+    </div>
+    <div class="abschnitt">
+      <div class="label">Schrittweite (Impulse)</div>
+      <div class="segment" id="schritte"></div>
+      <div class="pad">
+        <span></span>
+        <button data-jog="y" data-r="-1" title="Pfeil hoch">▲<small>hoch (Y−)</small></button>
+        <span></span>
+        <button data-jog="x" data-r="-1" title="Pfeil links">◀<small>X−</small></button>
+        <div class="mitte" id="pad-mitte">±10</div>
+        <button data-jog="x" data-r="1" title="Pfeil rechts">▶<small>X+</small></button>
+        <span></span>
+        <button data-jog="y" data-r="1" title="Pfeil runter">▼<small>runter (Y+)</small></button>
+        <span></span>
+      </div>
+      <div class="zeile" style="justify-content:center">
+        <button class="btn" data-b="aus" title="Taste A">Ausleger aus</button>
+        <button class="btn" data-b="ein" title="Taste E">Ausleger ein</button>
+      </div>
+      <div class="tipp"><kbd>←</kbd><kbd>→</kbd> X · <kbd>↑</kbd><kbd>↓</kbd> Y · <kbd>Shift</kbd> = ×5 · <kbd>A</kbd>/<kbd>E</kbd> Ausleger · <kbd>Enter</kbd> Position speichern · <kbd>Esc</kbd> Stopp</div>
+    </div>
+    <div class="abschnitt">
+      <div class="label">Absolut anfahren</div>
+      <div class="abs">
+        <input type="number" id="abs-x" placeholder="X" min="0">
+        <input type="number" id="abs-y" placeholder="Y" min="0">
+        <button class="btn" id="abs-los">Fahren</button>
+      </div>
+    </div>
+    <div class="abschnitt">
+      <div class="label">Genauigkeit</div>
+      <div class="zstatus" style="margin:0 0 8px"><span>Fahrten seit Referenz: <b id="seit-ref">–</b></span><span id="kontrolle">noch nicht geprüft</span></div>
+      <label class="zeile" style="gap:6px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="auto-ref">
+        Vor Anfahren und Prüfen neu referenzieren</label>
+      <button class="btn" data-b="kontrolle" title="Fährt X und Y zum Referenztaster, zählt dabei mit und kommt zurück">Zählung prüfen</button>
+    </div>
+    <div class="abschnitt zeile">
+      <button class="btn" data-b="ref">Referenzfahrt</button>
+      <button class="btn" data-b="band_rein">Band rein</button>
+      <button class="btn" data-b="band_raus">Band raus</button>
+    </div>
+  </section>
+
+  <!-- Regal -->
+  <section class="panel">
+    <h2>Regal und Band <span id="zaehler"></span></h2>
+    <div class="inhalt">
+      <div class="regal" id="regal"></div>
+      <div class="band"><div class="kz">⇄</div><div id="band-kachel"></div></div>
+      <div class="fortschritt"><i id="balken" style="width:0"></i></div>
+    </div>
+    <div class="abschnitt">
+      <div class="label">Lage aller Positionen (Encoder-Impulse) – <span style="text-transform:none">Kreuz = RBG jetzt</span></div>
+      <svg class="karte" id="karte" viewBox="0 0 640 340"></svg>
+    </div>
+    <div class="abschnitt zeile">
+      <button class="btn" id="alle-testen">Alle 9 Fächer testen</button>
+      <a class="btn" href="/positionen.json" target="_blank" style="text-decoration:none">positionen.json ansehen</a>
+    </div>
+  </section>
+
+  <!-- Detail -->
+  <section class="panel p-detail">
+    <h2>Ausgewählter Platz</h2>
+    <div class="abschnitt">
+      <div class="titel"><b id="d-name">B2</b><span id="d-text"></span></div>
+      <table class="vgl">
+        <tr><th></th><th>X</th><th>Grundhöhe</th><th>Hebehöhe</th></tr>
+        <tr><td>gespeichert</td><td id="d-sx"></td><td id="d-sg"></td><td id="d-sh"></td></tr>
+        <tr><td>RBG jetzt</td><td id="d-ix"></td><td id="d-iy" colspan="2" style="text-align:center"></td></tr>
+        <tr><td>Abweichung</td><td id="d-dx"></td><td id="d-dg"></td><td id="d-dh"></td></tr>
+      </table>
+      <div class="tipp" id="d-stand"></div>
+    </div>
+    <div class="abschnitt knoepfe">
+      <button class="btn primaer" id="d-grund">Grundhöhe anfahren</button>
+      <button class="btn" id="d-hebe">Hebehöhe anfahren</button>
+      <button class="btn gruen breit" id="d-merke" title="Enter">Aktuelle Position als Grundhöhe speichern</button>
+      <button class="btn" id="d-aus" title="Fach → Band">Auslagern testen</button>
+      <button class="btn" id="d-ein" title="Band → Fach">Einlagern testen</button>
+    </div>
+    <div class="abschnitt">
+      <div class="label">Werte von Hand eintragen</div>
+      <div class="abs">
+        <input type="number" id="h-x" placeholder="X">
+        <input type="number" id="h-g" placeholder="Grundhöhe">
+        <button class="btn" id="h-setzen">Setzen</button>
+      </div>
+      <div class="zeile" style="margin-top:8px">
+        <button class="btn klein" id="d-reset">Auf Startwert zurücksetzen</button>
+        <span class="tipp" style="margin:0">Hebehöhe = Grundhöhe − <b id="hub">40</b> (fest)</span>
+      </div>
+    </div>
+    <div class="abschnitt">
+      <div class="hinweis"><b>Grundhöhe:</b> genau auf Lagerplatzhöhe – der ausgefahrene Ausleger liegt am Behälter an,
+        hebt ihn aber <b>noch nicht</b> an. Auf der <b>Hebehöhe</b> (40 Impulse höher) ist der Behälter angehoben.
+        <b>X:</b> Ausleger mittig unter dem Behälter.<br>
+        Aufnehmen: Grundhöhe → Hebehöhe · Abstellen: Hebehöhe → Grundhöhe.</div>
+      <ol class="ablauf">
+        <li>Platz anklicken → <i>Grundhöhe anfahren</i> (vorher automatische Referenzfahrt)</li>
+        <li><i>Ausleger aus</i>, mit kleinen Schritten hochtippen, bis sich der Behälter gerade hebt, dann zurück, bis er wieder aufliegt</li>
+        <li><i>Als Grundhöhe speichern</i> (Ausleger darf dabei ausgefahren sein), dann <i>Ausleger ein</i></li>
+        <li><i>Hebehöhe anfahren</i> zur Kontrolle: mit ausgefahrenem Ausleger muss der Behälter frei angehoben sein</li>
+        <li>Alle 9 Fächer und das Band (CV) einlernen, dann <i>Auslagern</i>/<i>Einlagern testen</i> und <i>Alle 9 Fächer testen</i></li>
+        <li>Ab und zu <i>Zählung prüfen</i>: Abweichung über ±5 → betroffene Plätze neu einlernen</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column: 1 / -1">
+    <h2>Protokoll</h2>
+    <div class="inhalt log" id="log"></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const FAECHER = ["A1","A2","A3","B1","B2","B3","C1","C2","C3"];
+const SCHRITTE = [1, 2, 5, 10, 25, 50, 100, 200];
+let S = null, sel = "B2", schritt = 10, toastTimer = null;
+const $ = id => document.getElementById(id);
+
+function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("an");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove("an"), 2600); }
+
+async function befehl(b, daten = {}) {
+  try {
+    const r = await fetch("/api/befehl", { method: "POST", headers: { "Content-Type": "application/json" },
+                                           body: JSON.stringify({ befehl: b, ...daten }) });
+    const j = await r.json();
+    if (!j.ok) toast(j.meldung);
+    else if (!["jog", "abs", "aus", "ein", "gehe", "ref", "kontrolle", "auslagern", "einlagern", "alle_testen", "band_rein", "band_raus"].includes(b)) toast(j.meldung);
+    holen();
+    return j.ok;
+  } catch (e) { toast("Keine Verbindung zum Programm"); return false; }
+}
+
+// --- Aufbau ---------------------------------------------------------------
+$("schritte").innerHTML = SCHRITTE.map(s => `<button data-s="${s}">${s}</button>`).join("");
+$("schritte").onclick = e => { const s = e.target.dataset.s; if (s) { schritt = +s; zeichneSchritt(); } };
+function zeichneSchritt() {
+  document.querySelectorAll("#schritte button").forEach(b => b.classList.toggle("an", +b.dataset.s === schritt));
+  $("pad-mitte").textContent = "±" + schritt;
+}
+zeichneSchritt();
+
+let regalHtml = "";
+for (const z of "ABC") {
+  regalHtml += `<div class="kz">${z}</div>`;
+  for (const s of "123") regalHtml += `<button class="fach" data-pos="${z}${s}"></button>`;
+}
+$("regal").innerHTML = regalHtml;
+$("band-kachel").innerHTML = `<button class="fach" data-pos="CV" style="width:100%"></button>`;
+document.querySelectorAll(".fach").forEach(f => f.onclick = () => { sel = f.dataset.pos; zeichne(); fuelleHand(); });
+
+document.querySelectorAll("[data-jog]").forEach(b => b.onclick = e =>
+  jog(b.dataset.jog, +b.dataset.r * schritt * (e.shiftKey ? 5 : 1)));
+document.querySelectorAll("[data-b]").forEach(b => b.onclick = () => befehl(b.dataset.b));
+$("stopp").onclick = () => befehl("stop");
+$("abs-los").onclick = () => {
+  const d = {}; if ($("abs-x").value !== "") d.x = +$("abs-x").value; if ($("abs-y").value !== "") d.y = +$("abs-y").value;
+  befehl("abs", d);
+};
+$("d-grund").onclick = () => befehl("gehe", { pos: sel, hoehe: "grund" });
+$("d-hebe").onclick = () => befehl("gehe", { pos: sel, hoehe: "hebe" });
+$("d-merke").onclick = merke;
+$("d-aus").onclick = () => {
+  if (confirm(`Auslagern-Test: Behälter aus ${sel} holen und aufs Band stellen. Das Band muss leer sein. Starten?`))
+    befehl("auslagern", { pos: sel });
+};
+$("d-ein").onclick = () => {
+  if (confirm(`Einlagern-Test: Behälter vom Band holen und in ${sel} abstellen. Behälter muss auf dem Band stehen, ${sel} leer sein. Starten?`))
+    befehl("einlagern", { pos: sel });
+};
+$("alle-testen").onclick = () => { if (confirm("Alle 9 Fächer nacheinander aus- und wieder einlagern (Band muss leer sein)? Dauert einige Minuten.")) befehl("alle_testen"); };
+$("h-setzen").onclick = () => befehl("setze", { pos: sel, x: +$("h-x").value, grundhoehe: +$("h-g").value });
+$("d-reset").onclick = () => { if (confirm(`${sel} auf den Startwert aus dem alten Raster zurücksetzen?`)) befehl("zuruecksetzen", { pos: sel }); };
+$("auto-ref").onchange = e => befehl("auto_ref", { wert: e.target.checked });
+
+function jog(achse, n) { befehl("jog", { achse, schritte: n }); }
+function merke() {
+  const p = S && S.positionen[sel];
+  if (p && p.eingelernt && !confirm(`${sel} ist schon eingelernt (X ${p.x}, Grundhöhe ${p.grundhoehe}). Mit X ${S.x}, Grundhöhe ${S.y} überschreiben?`)) return;
+  befehl("merke", { pos: sel });
+}
+function fuelleHand() { if (!S) return; const p = S.positionen[sel]; $("h-x").value = p.x; $("h-g").value = p.grundhoehe; }
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { befehl("stop"); e.preventDefault(); return; }
+  if (e.target.tagName === "INPUT") return;
+  const f = schritt * (e.shiftKey ? 5 : 1);
+  const k = { ArrowLeft: ["x", -f], ArrowRight: ["x", f], ArrowUp: ["y", -f], ArrowDown: ["y", f] }[e.key];
+  if (k) { jog(...k); e.preventDefault(); }
+  else if (e.key === "a" || e.key === "A") befehl("aus");
+  else if (e.key === "e" || e.key === "E") befehl("ein");
+  else if (e.key === "Enter") { merke(); e.preventDefault(); }
+});
+
+// --- Anzeige --------------------------------------------------------------
+function chip(id, art, text) { const c = $(id); c.className = "chip " + art; c.querySelector("span").textContent = text; }
+
+function zeichne() {
+  if (!S) return;
+  chip("c-modus", S.modus.startsWith("Sim") ? "warn" : "ok", S.modus);
+  if (S.fehler) chip("c-zustand", "err", "Fehler");
+  else if (S.beschaeftigt) chip("c-zustand", "busy", "fährt: " + S.aktiv);
+  else if (!S.referenziert) chip("c-zustand", "warn", "keine Referenz");
+  else chip("c-zustand", "ok", "bereit");
+  chip("c-datei", "", S.datei);
+  $("zeit").textContent = S.zeit;
+  $("fehlerband").classList.toggle("an", !!S.fehler); $("fehlertext").textContent = S.fehler || "";
+
+  $("ist-x").textContent = S.x; $("ist-y").textContent = S.y;
+  $("ist-z").textContent = S.ausleger; $("ist-z").className = S.ausleger === "eingefahren" ? "" : "aus";
+  $("ist-ls").textContent = S.lichtschranke_innen ? "frei" : "belegt";
+  const zu = S.beschaeftigt;
+  document.querySelectorAll("[data-jog], [data-b], #abs-los, #d-grund, #d-hebe, #d-aus, #d-ein, #alle-testen, #d-merke")
+    .forEach(b => { if (b.dataset.b !== "quittieren") b.disabled = zu; });
+  document.querySelector('[data-jog="x"][data-r="-1"]').disabled = zu || S.ausleger !== "eingefahren";
+  document.querySelector('[data-jog="x"][data-r="1"]').disabled = zu || S.ausleger !== "eingefahren";
+  $("d-aus").disabled = $("d-ein").disabled = zu || sel === "CV";
+
+  let n = 0;
+  document.querySelectorAll(".fach").forEach(f => {
+    const name = f.dataset.pos, p = S.positionen[name];
+    if (p.eingelernt) n++;
+    f.className = "fach" + (p.eingelernt ? " gelernt" : "") + (name === sel ? " sel" : "") + (S.hier && S.hier[0] === name ? " hier" : "");
+    if (S.hier && S.hier[0] === name) f.dataset.hoehe = S.hier[1] === "grund" ? "RBG · G" : "RBG · H";
+    f.innerHTML = `<b>${name === "CV" ? "CV · Förderband" : name}</b><span class="w">X ${p.x} · G ${p.grundhoehe} · H ${p.hebehoehe}</span>` +
+                  `<span class="st">${p.eingelernt ? "eingelernt" : "Startwert"}</span>`;
+  });
+  $("zaehler").textContent = `${n} von 10 eingelernt`;
+  $("balken").style.width = (n * 10) + "%";
+
+  const p = S.positionen[sel], dx = S.x - p.x, dg = S.y - p.grundhoehe, dh = S.y - p.hebehoehe;
+  const vz = v => (v > 0 ? "+" : "") + v;
+  $("d-name").textContent = sel;
+  $("d-text").textContent = sel === "CV" ? "Übergabe am Förderband" : `Zeile ${sel[0]}, Spalte ${sel[1]}`;
+  $("d-sx").textContent = p.x; $("d-sg").textContent = p.grundhoehe; $("d-sh").textContent = p.hebehoehe;
+  $("d-ix").textContent = S.x; $("d-iy").textContent = "Y " + S.y;
+  $("d-dx").textContent = vz(dx); $("d-dg").textContent = vz(dg); $("d-dh").textContent = vz(dh);
+  $("d-dx").className = dx ? "delta-x" : "delta-0";
+  $("d-dg").className = dg ? "delta-x" : "delta-0"; $("d-dh").className = dh ? "delta-x" : "delta-0";
+  $("d-stand").textContent = p.eingelernt ? `Grundhöhe eingelernt am ${p.eingelernt}` : "Noch nicht eingelernt – Startwert";
+  $("hub").textContent = S.hub;
+  $("auto-ref").checked = S.auto_ref;
+  $("seit-ref").textContent = S.seit_ref;
+  $("seit-ref").className = S.seit_ref > 40 ? "aus" : "";
+  if (S.kontrolle) {
+    const k = S.kontrolle, gut = Math.max(Math.abs(k.x), Math.abs(k.y)) <= 5;
+    $("kontrolle").innerHTML = `Kontrolle ${k.zeit}: <b style="color:var(--${gut ? "ok" : "err"})">X ${k.x > 0 ? "+" : ""}${k.x}, Y ${k.y > 0 ? "+" : ""}${k.y}</b>`;
+  }
+
+  karte();
+  $("log").innerHTML = S.log.slice().reverse().map(l => `<div class="${l.art}"><span>${l.zeit}</span>${l.text}</div>`).join("");
+}
+
+function karte() {
+  const W = 640, H = 340, r = 18, sx = (W - 2 * r) / S.ende_x, sy = (H - 2 * r) / S.ende_y;
+  const X = v => r + v * sx, Y = v => r + v * sy;
+  let s = `<rect x="${r}" y="${r}" width="${W - 2 * r}" height="${H - 2 * r}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>`;
+  s += `<text x="${r + 4}" y="${H - 4}" font-size="11" fill="var(--muted)">0/0 = Referenz</text>`;
+  for (const [name, p] of Object.entries(S.positionen)) {
+    const f = p.eingelernt ? "var(--ok)" : "var(--warn)";
+    const aktiv = name === sel;
+    s += `<line x1="${X(p.x)}" y1="${Y(p.hebehoehe)}" x2="${X(p.x)}" y2="${Y(p.grundhoehe)}" stroke="${f}" stroke-width="2"/>`;
+    s += `<circle cx="${X(p.x)}" cy="${Y(p.grundhoehe)}" r="${aktiv ? 6 : 4}" fill="${f}" stroke="${aktiv ? "var(--accent)" : "none"}" stroke-width="2"/>`;
+    s += `<text x="${X(p.x) + 8}" y="${Y(p.grundhoehe) + 4}" font-size="11" fill="var(--ink2)">${name}</text>`;
+  }
+  const cx = X(S.x), cy = Y(S.y);
+  s += `<g stroke="var(--calib)" stroke-width="2"><line x1="${cx - 9}" y1="${cy}" x2="${cx + 9}" y2="${cy}"/><line x1="${cx}" y1="${cy - 9}" x2="${cx}" y2="${cy + 9}"/></g>`;
+  $("karte").innerHTML = s;
+}
+
+let ersterStand = true;
+async function holen() {
+  try {
+    const r = await fetch("/api/status"); S = await r.json(); zeichne();
+    if (ersterStand) { fuelleHand(); ersterStand = false; }
+  } catch (e) { chip("c-zustand", "err", "Programm nicht erreichbar"); }
+}
+holen(); setInterval(holen, 400);
+</script>
+</body>
+</html>
