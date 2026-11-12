@@ -60,8 +60,8 @@ Am Band bleibt der Ausleger wie im Original ausgefahren, solange der Greifer dor
 
 ### Lagerlogik
 
-- **Referenzfahrt (0/0) nur beim Start.** Danach bleibt das Regalbediengerät (RBG) nach jeder Aktion an seiner Position stehen; sie ist der Startpunkt der nächsten Fahrt. Nach einer Störung wird nur dann referenziert, wenn eine Achse ihre Referenz verloren hat.
-- **Nachreferenzieren in Pausen:** Ohne Referenzfahrt nach jedem Auftrag summieren sich kleine Zählfehler der Encoder (der Behälter wird dann nicht mehr sicher angehoben). Deshalb fährt das RBG nach `NACHREFERENZ_NACH_TRANSPORTEN` (Standard 4) Transporten in der nächsten Pause kurz auf 0/0 und zurück an seine Position – spätestens nach 10 Transporten auch ohne Pause.
+- **Referenzfahrt nach jedem Auftrag** (wie im C++-Original, dort `moveRef()` beim Eintritt in IDLE). Nach jedem abgeschlossenen Auftrag (Einlagern inkl. Leerbehälter-Bereitstellung, Auslagern nach der Entnahme) und nach jedem einzelnen Umlagerzug fährt das RBG mit eingefahrenem Ausleger auf 0/0 und danach zurück an seine letzte Position. So liegen höchstens 2 Transporte zwischen zwei Referenzfahrten und Zählfehler der Encoder können sich nicht aufsummieren. Die Referenzfahrt zählt nicht in die Spielzeiten der Kennzahlen. Wurde kein Behälter bewegt, entfällt sie. Abschaltbar zum Testen mit `REFERENZ_NACH_AUFTRAG = False` in `code/konfiguration.py`.
+- **Beim Start und nach Störungen:** Beim Start wird immer referenziert. Nach einer quittierten Störung nur dann, wenn eine Achse ihre Referenz verloren hat – und ohne Rückfahrt an die alte Position.
 - **Leerbehälter sofort bereitstellen:** Sobald eine Einlagerung startet, fordert der Greifer den leeren Behälter an. Das HRL stellt ihn bereit, während der Greifer das Werkstück holt und die Farbe prüft. Der Greifer muss an der Übergabe so kaum noch warten. Wird das Werkstück ausgeschleust, bleibt der Behälter für die nächste Einlagerung am Band.
 - **Leerer Behälter bleibt am Band.** Nach einer Auslagerung bleibt der leere Behälter auf der Förderstrecke stehen.
   - Folgt eine **Einlagerung**, legt der Greifer das Werkstück direkt hinein (eine Fahrt statt zwei).
@@ -182,7 +182,7 @@ stateDiagram-v2
 - **Kein Kalibriermodus fürs Hochregallager:** Positionen sind je Fach fest hinterlegt (statt Spalten-/Zeilenraster); eingelernt wird mit dem separaten Kalibrierprogramm.
 - **Kein NFC:** Die NFC-Position wird wie im Original angefahren, gelesen oder beschrieben wird aber nichts. Jedes Werkstück bekommt stattdessen eine erzeugte ID.
 - **Auslagern direkt in die Ausgabe:** Im Original fährt das Werkstück vorher über Bearbeitungsstation und Sortierstrecke. Das kommt dazu, sobald diese Stationen in Python laufen. Die Positionen dafür (MPO, SSD) sind schon kalibrierbar.
-- **Lagerlogik:** keine Referenzfahrt nach jedem Auftrag, leerer Behälter bleibt am Band, ABC-Zuordnung, Umlagerung, Reservierung/Buchung mit Klärfall, Warteschlange und Kennzahlen (siehe Abschnitt 3).
+- **Lagerlogik:** Referenzfahrt nach jedem Auftrag wie im Original, aber mit Rückfahrt an die letzte Position statt Stehenbleiben auf 0/0; leerer Behälter bleibt am Band, ABC-Zuordnung, Umlagerung, Reservierung/Buchung mit Klärfall, Warteschlange und Kennzahlen (siehe Abschnitt 3).
 - **Kein MQTT:** Greifer und Hochregallager laufen im selben Programm und rufen sich direkt auf.
 - **Fehlerbehandlung:** Statt `exit(1)` gehen die Stationen in den Zustand FAULT und lassen sich quittieren. Meldet das Hochregallager während einer Übergabe einen Fehler, bricht auch der Greifer ab, statt endlos zu warten.
 - **Eingabe-Entprellung:** Ein Werkstück wird erst angenommen, wenn die Lichtschranke 0,5 s belegt ist. Außerdem muss das Hochregallager bereit sein und einen leeren Behälter haben.

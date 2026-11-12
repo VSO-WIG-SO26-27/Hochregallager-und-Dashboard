@@ -62,12 +62,13 @@ TIMEOUT_REFERENZ_S = 20.0      # TxtAxis.h: TIMEOUT_S_MOVEREF
 TIMEOUT_FAHRT_S = 20.0         # TxtAxis.h: TIMEOUT_S_MOVELEFT / MOVERIGHT
 ZYKLUS_S = 0.01                # TxtAxis.h: CYCLE_MS_AXIS = 10 ms
 
-# Nachreferenzieren: Ohne Referenzfahrt nach jedem Auftrag summieren sich kleine Zählfehler
-# der Encoder. Deshalb fährt das RBG nach so vielen Transporten in einer Pause (kein Auftrag,
-# Greifer in Ruhe) einmal auf 0/0 und danach zurück an seine letzte Position.
-NACHREFERENZ_NACH_TRANSPORTEN = 4
-NACHREFERENZ_RUHE_S = 2.0       # so lange muss Ruhe herrschen
-NACHREFERENZ_SPAETESTENS = 10   # spätestens dann auch ohne Pause (vor dem nächsten Auftrag)
+# Referenzfahrt nach jedem Auftrag (wie im C++-Original: moveRef beim Eintritt in IDLE).
+# Ohne regelmäßige Referenz summieren sich kleine Zählfehler der Encoder und das RBG trifft
+# die Fächer nicht mehr genau. Deshalb fährt das RBG nach jedem abgeschlossenen Auftrag
+# (Einlagern, Auslagern) und nach jedem Umlagerzug auf 0/0 und danach zurück an seine
+# letzte Position. Höchstens 2 Transporte liegen so zwischen zwei Referenzfahrten.
+# False = abschalten (nur zum Testen; dann wird nur beim Start/ohne Referenz referenziert).
+REFERENZ_NACH_AUFTRAG = True
 
 # Laufzeiten Förderband (TxtConveyorBelt.cpp: moveIn 1000 ms, moveOut 1200 ms)
 BAND_REIN_S = 1.0

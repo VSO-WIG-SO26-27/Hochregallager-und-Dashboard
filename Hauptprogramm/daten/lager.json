@@ -1,16 +1,16 @@
 {
  "Storage": {
-  "A1": {
-   "tag_uid": "",
-   "state": 0,
-   "type": 3
-  },
+  "A1": null,
   "A2": null,
   "A3": null,
   "B1": null,
   "B2": null,
   "B3": null,
-  "C1": null,
+  "C1": {
+   "tag_uid": "2E404DD3715D48",
+   "state": 0,
+   "type": 3
+  },
   "C2": null,
   "C3": null
  },
@@ -19,17 +19,14 @@
   "A2": true,
   "A3": true,
   "B1": true,
-  "B2": true,
+  "B2": false,
   "B3": true,
   "C1": true,
   "C2": true,
   "C3": true
  },
- "Band": null,
- "Transport": {
-  "von": "A2",
-  "nach": "BAND",
-  "wp": null,
-  "art": "Auslagern"
- }
+ "Band": {
+  "wp": null
+ },
+ "Transport": null
 }

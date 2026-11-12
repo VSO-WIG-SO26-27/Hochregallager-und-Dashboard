@@ -91,7 +91,7 @@ class Hochregallager(Station):
         self._letzte_planung = 0.0
         self.letzter_transport = ("", "")
         self.transporte_seit_ref = 0
-        self._ruhe_seit = None
+        self._nach_fehler = False     # IDLE nach Quittieren: nicht an die alte Position zurück
         if self.lager.klaerfall:
             self.log("KLÄRFALL: " + self.lager.klaerfall)
 
@@ -107,26 +107,36 @@ class Hochregallager(Station):
     # =======================================================================
     # Bewegungsabläufe (TxtHighBayWarehouse.cpp)
     # =======================================================================
-    def referenzfahrt(self):
-        """C++: moveRef – Ausleger einfahren, dann X und Y gleichzeitig zum Referenztaster."""
-        self._setze_status(True, "BUSY")
+    def referenzfahrt(self, status=True):
+        """C++: moveRef – Ausleger einfahren, dann X und Y gleichzeitig zum Referenztaster.
+        status=False: Status nicht umschalten (Aufrufer bleibt durchgehend BUSY)."""
+        if status:
+            self._setze_status(True, "BUSY")
         self.taetigkeit = "Referenzfahrt"
         self.achse_z.einfahren()
         self._parallel(self.achse_x.referenzfahrt, self.achse_y.referenzfahrt)
         self.transporte_seit_ref = 0
         self.taetigkeit = ""
-        self._setze_status(False, "READY")
+        if status:
+            self._setze_status(False, "READY")
 
     def nachreferenzieren(self):
-        """Encoder-Abweichung zurücksetzen: auf 0/0 und zurück an die letzte Position."""
+        """Encoder-Abweichung zurücksetzen: auf 0/0 und zurück an die letzte Position.
+        Status bleibt dabei durchgehend BUSY (kein kurzes READY zwischendurch)."""
         x, y = self.position()
-        self.log(f"Nachreferenzieren nach {self.transporte_seit_ref} Transporten (Encoder-Abgleich)")
-        self.referenzfahrt()
+        self.log(f"Referenzfahrt nach Auftrag ({self.transporte_seit_ref} Transport(e) seit der letzten Referenz)")
         self._setze_status(True, "BUSY")
+        self.referenzfahrt(status=False)
         self.taetigkeit = "Zurück an die letzte Position"
         self._fahre_xy(max(0, x), max(0, y))
         self.taetigkeit = ""
         self._setze_status(False, "READY")
+
+    def referenz_nach_auftrag(self):
+        """Nach jedem Auftrag bzw. Umlagerzug referenzieren (C++: moveRef beim Eintritt in IDLE).
+        Nur, wenn seit der letzten Referenz tatsächlich ein Behälter bewegt wurde."""
+        if cfg.REFERENZ_NACH_AUFTRAG and self.transporte_seit_ref > 0:
+            self.nachreferenzieren()
 
     def referenz_falls_noetig(self):
         """Nur referenzieren, wenn eine Achse keine gültige Position hat (Start, nach Fehler)."""
@@ -402,6 +412,7 @@ class Hochregallager(Station):
     # =======================================================================
     def _bei_eintritt(self, zustand):
         if zustand == "FAULT":
+            self._nach_fehler = True
             if self.lager.transport:
                 self.lager.klaerfall_melden(self.fehler)
                 self.log("KLÄRFALL: " + self.lager.klaerfall)
@@ -410,7 +421,11 @@ class Hochregallager(Station):
             self.taetigkeit = ""
         elif zustand == "IDLE":
             self.set_geschwindigkeit(cfg.GESCHWINDIGKEIT)
-            self.referenz_falls_noetig()      # kein 0/0 nach Aufträgen – nur ohne gültige Referenz
+            self.referenz_falls_noetig()      # Start / nach Fehler: Achse ohne gültige Position
+            if self._nach_fehler:
+                self._nach_fehler = False     # nach einer Störung nicht an die alte Position zurück
+            else:
+                self.referenz_nach_auftrag()  # Auftrag abgeschlossen: 0/0 und zurück
             self._setze_status(False, "READY")
             self.taetigkeit = ""
             self.lager._geaendert()          # C++: publishStorage()
@@ -515,27 +530,8 @@ class Hochregallager(Station):
             self.referenzfahrt()
         elif (hand := self._hole("hand")) is not None:
             self._handbetrieb(hand)
-        elif not self._nachreferenz_pruefen():
+        else:
             self._auto_umlagern_pruefen()
-
-    def _nachreferenz_pruefen(self):
-        """In einer Pause nach einigen Transporten nachreferenzieren. True = ist passiert."""
-        n = self.transporte_seit_ref
-        if n == 0 or self.lager.transport:
-            self._ruhe_seit = None
-            return False
-        ruhe = self._ruhe()
-        if ruhe and self._ruhe_seit is None:
-            self._ruhe_seit = time.time()
-        elif not ruhe:
-            self._ruhe_seit = None
-        faellig = (n >= cfg.NACHREFERENZ_NACH_TRANSPORTEN and ruhe
-                   and time.time() - self._ruhe_seit >= cfg.NACHREFERENZ_RUHE_S)
-        if faellig or n >= cfg.NACHREFERENZ_SPAETESTENS:
-            self.nachreferenzieren()
-            self._ruhe_seit = None
-            return True
-        return False
 
     # --- Umlagerung ----------------------------------------------------------
     def _ruhe(self):
@@ -600,6 +596,7 @@ class Hochregallager(Station):
             raise AchsenFehler(str(e))
         self.kpi.spiel("Umlagerung", dauer, time.time() - t0, inhalt if inhalt in FARBEN else "", von, nach)
         self._plan_index += 1
+        self.referenz_nach_auftrag()          # jeder Umlagerzug zählt als eigener Auftrag
         self._setze_status(False, "READY")
 
     # --- Handbetrieb (nur im Dashboard, gibt es im Original nicht) ---------
